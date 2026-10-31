@@ -17,3 +17,6 @@ app/services/go3/models/
 
 # Test fixture videos (large binaries, provided locally)
 tests/fixtures/
+ARCHITECTURE.md
+DATABASE_DESIGN_SIMPLIFIED.md
+DATABASE_DESIGN.md
