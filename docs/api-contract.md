@@ -1,9 +1,10 @@
 # API contracts
 
-The backend exposes health and a learner dashboard. Assessment, media upload,
-and comprehension routes below are the next frontend-facing contracts; they
-are not implemented yet. ASR and vision are private services described in
-[`ai-service-contracts.md`](ai-service-contracts.md).
+The backend exposes health, a learner dashboard, and CRUD routes for the
+application tables. These routes use the Supabase service key and are protected
+by a separate backend key; never call them from browser code.
+AI inference remains outside this API. See [`ai-service-contracts.md`](ai-service-contracts.md)
+for the private service boundaries.
 
 ## Implemented routes
 
@@ -69,6 +70,47 @@ to ten latest sessions. It never accepts a learner ID from the browser.
 completed selected analyses only. Errors: `401` for a missing/invalid token,
 `404` when the authenticated user has no learner profile, and `503` when
 Supabase is unavailable or not configured.
+
+### Full-table backend CRUD
+
+Configure a strong `BACKEND_API_KEY` in the backend environment and send it as
+`X-Backend-Key`. This credential is for trusted server-side callers and must
+never be shipped to the frontend. These routes are unavailable with `503` until
+the key is configured. The database connection is privileged; there is no
+staff-role model, so these routes are for trusted backend callers, not learners.
+
+Each collection supports `GET` (paginated list), `POST` (create),
+`GET /{record_id}`, `PATCH /{record_id}`, and `DELETE /{record_id}`. List
+requests accept `limit` (1–500, default 100) and `offset` (default 0), and
+return `{ "items": [], "limit": 100, "offset": 0, "total": 0 }`. Create and
+update bodies are typed in OpenAPI and reject unknown fields. Database defaults
+are used for generated IDs and timestamps.
+
+| Collection | Create fields | Update fields |
+| --- | --- | --- |
+| `/v1/identity/grade-levels` | `grade_id`, `label`, `sequence` (all required) | `label`, `sequence` |
+| `/v1/identity/learners` | `user_id`, `current_grade_id` (required), `display_name` | `current_grade_id`, `display_name` |
+| `/v1/content/passages` | `title`, `difficulty_grade_id`, `language_code`, `content` (required), `status`, `published_at` | `title`, `difficulty_grade_id`, `language_code`, `content`, `status`, `published_at` |
+| `/v1/content/passage-tokens` | `passage_id`, `position`, `token_text` (required), `is_proper_noun` | `position`, `token_text`, `is_proper_noun` |
+| `/v1/content/comprehension-questions` | `passage_id`, `question_order`, `prompt` (required), `points_possible` | `question_order`, `prompt`, `points_possible` |
+| `/v1/content/question-choices` | `question_id`, `choice_order`, `choice_text` (required), `is_correct` | `choice_order`, `choice_text`, `is_correct` |
+| `/v1/reading/sessions` | `learner_id`, `grade_at_assessment_id`, `passage_id`, `assignment_policy_version` (required), `status` | `status`, `reading_started_at`, `completed_at` |
+| `/v1/reading/recordings` | `session_id`, `kind`, `storage_bucket`, `storage_path`, `content_type` (required), `derived_from_recording_id`, `size_bytes`, `sha256`, `duration_seconds` | `content_type`, `size_bytes`, `sha256`, `duration_seconds` |
+| `/v1/reading/reading-analyses` | `session_id`, `source_recording_id`, `run_number`, `pipeline_version`, `scoring_policy_version` (required); `status`, `is_selected`, `transcript`, `reading_duration_seconds`, `wpm`, `word_recognition_pct`, `reading_level`, `failure_code`, `finished_at` | `status`, `is_selected`, transcript, duration, scores, level, failure and finish fields |
+| `/v1/reading/reading-events` | `analysis_id`, `event_order`, `detected_type` (required); `source_service_job_id`, expected token IDs, `heard_text`, audio times, `confidence` | `reviewed_type`, `reviewer_id`, `reviewed_at`, `review_note` |
+| `/v1/reading/behavior-observations` | `analysis_id`, `source_service_job_id`, `type`, `outcome` (required), `confidence`, `evidence_note` | `outcome`, `confidence`, `evidence_note` |
+| `/v1/reading/phoneme-events` | `analysis_id`, `reading_event_id`, `source_service_job_id`, `alignment_position`, `notation`, `outcome` (required); expected/actual phoneme, audio times, `confidence` | expected/actual phoneme, notation, outcome, audio times and confidence |
+| `/v1/services/jobs` | `session_id`, `analysis_id`, `input_recording_id`, `kind`, `service_name`, `attempt_number`, `required_for_completion`, `request_schema_version`, `request_sha256` (required); status, current flag, external ID, result/model versions, response, failure and timing fields | current flag, status, external ID, result/model versions, response, failure and timing fields |
+| `/v1/comprehension/attempts` | `session_id`, `attempt_number` (required); `status`, `submitted_at`, scores | `status`, `submitted_at`, `score_earned`, `score_possible` |
+| `/v1/comprehension/answers` | `attempt_id`, `question_id` (required), `selected_choice_id`, `answered_at` | `selected_choice_id`, `answered_at` |
+
+The database enforces foreign keys, publication immutability, scoring ranges,
+and attempt/answer state rules. These constraints can return `409` for related
+record conflicts or `422` for invalid values; missing rows return `404`.
+`auth.users` is managed through Supabase Auth, not table CRUD. The dashboard
+summary view is read-only and remains available through `GET /v1/dashboard`.
+Recording CRUD manages database metadata only; media bytes must be uploaded or
+removed through Supabase Storage separately.
 
 ## Proposed learner flow
 

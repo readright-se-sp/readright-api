@@ -1,17 +1,18 @@
 # Runtime models
 
-The dashboard feature keeps its API models in
-[`app/features/dashboard/models.py`](../app/features/dashboard/models.py):
+The relational schema is defined by the SQL migration and mirrored in
+[`schema-proposal.dbml`](schema-proposal.dbml). CRUD request models are generated
+from each feature's `models.py`, which lists writable fields and types:
 
-- `DashboardLearner`: authenticated learner and current grade.
-- `DashboardSummary`: session counts and averages from completed selected runs.
-- `DashboardSession`: recent session, passage, and optional selected reading.
-- `LearnerDashboard`: response root.
+- `learners`: grade levels and learner profiles.
+- `content`: passages, passage tokens, comprehension questions and choices.
+- `reading`: sessions, recordings, analyses, reading events, behavior
+  observations and phoneme events.
+- `service_jobs`: external-service attempts and result payloads.
+- `comprehension`: attempts and answers.
+- `dashboard`: learner-facing dashboard response models.
 
-The relational model is in the SQL migration and mirrored in
-[`schema-proposal.dbml`](schema-proposal.dbml). AI inference implementations
-are not part of this backend.
-
-Shared Supabase access is provided through
-[`app/dependencies/supabase.py`](../app/dependencies/supabase.py). Feature
-packages depend on it; there is no general `services` layer.
+`auth.users` belongs to Supabase Auth. `learner_dashboard_summary` is a
+read-only database view. Shared Supabase access is provided by
+[`app/dependencies/supabase.py`](../app/dependencies/supabase.py); database
+operations stay inside their feature's controller, service and repository.

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     SUPABASE_URL: str = ""
     SUPABASE_SERVICE_KEY: str = ""
+    BACKEND_API_KEY: str = ""
 
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
 

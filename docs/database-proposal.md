@@ -4,8 +4,8 @@
 [`supabase/migrations/20261031000100_initial_readright_schema.sql`](../supabase/migrations/20261031000100_initial_readright_schema.sql)
 creates the initial schema, including sessions, media lineage, service jobs,
 normalized reading evidence, comprehension, and the dashboard summary view.
-The application will still be implemented feature by feature. No remote
-migration has been applied.
+API code is grouped by feature, with shared CRUD mechanics under
+`app/features/shared`.
 
 ## Decisions in this revision
 
@@ -31,11 +31,11 @@ an `analysis_id` foreign key; a job ID must not reference its own analysis ID.
 
 Install the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started),
 then run `supabase start` and `supabase db reset` to apply migrations to a local
-stack. Remote deployment is a separate step: link the intended project, review
-`supabase db push --dry-run`, then run `supabase db push` when ready. This repo
-has no configured project link, and no remote migration has been run.
+stack. Remote deployment is separate: link the intended project, review
+`supabase db push --dry-run`, then run `supabase db push` when ready.
 
-The schema is an initial working baseline. Before production, confirm media and
-transcript retention, user deletion/storage cleanup, supported grade values,
-service retry policy, and whether staff reporting needs additional access
-policies.
+The current Supabase link targets the fresh project. On 2026-10-31, the linked
+migration history confirmed `20261031000100` applied there. Before production,
+confirm media and transcript retention, user deletion/storage cleanup,
+supported grade values, service retry policy, and whether staff reporting
+needs additional access policies.

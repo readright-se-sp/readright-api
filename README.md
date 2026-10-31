@@ -1,13 +1,12 @@
 # ReadRight backend
 
 FastAPI backend for ReadRight. Local ASR, MediaPipe CV, prosody analysis, and
-the synchronous `/analyze` pipeline have been removed. ASR and vision are
-separate service boundaries; the backend currently provides health and a
-learner dashboard API.
+the synchronous `/analyze` pipeline have been removed. AI inference remains
+outside this API. It provides health, a learner dashboard, and full-table CRUD
+routes for trusted backend callers.
 
 ## Docs
 
-- [Architecture](ARCHITECTURE.md)
 - [API contracts](docs/api-contract.md)
 - [Models](docs/models.md)
 - [Database design and migrations](docs/database-proposal.md)
@@ -15,8 +14,8 @@ learner dashboard API.
 
 ## Run locally
 
-Requires Python 3.12. Configure Supabase Auth and database access for the
-dashboard endpoint.
+Requires Python 3.12. Configure Supabase and `BACKEND_API_KEY` for CRUD routes.
+Never expose the service key or backend key to browser code.
 
 ```bash
 python3.12 -m venv .venv
@@ -27,7 +26,9 @@ uvicorn app.main:app --reload
 ```
 
 `GET /health` is public. `GET /v1/dashboard` requires a Supabase user access
-token and a matching `learners` row. See [API contracts](docs/api-contract.md).
+token and a matching `learners` row. Full-table CRUD routes require
+`X-Backend-Key` and are for trusted server-side callers. See
+[API contracts](docs/api-contract.md).
 
 Database migrations live under `supabase/migrations/`. Local Supabase
 development is described in [database design](docs/database-proposal.md).

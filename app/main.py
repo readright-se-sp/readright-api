@@ -8,7 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.dependencies.supabase import init_supabase_client
+from app.features.comprehension import ComprehensionController
+from app.features.content import ContentController
 from app.features.dashboard import DashboardController
+from app.features.learners import LearnersController
+from app.features.reading import ReadingController
+from app.features.service_jobs import ServiceJobsController
 from app.routers.health import HealthController
 
 
@@ -38,6 +43,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(HealthController().router)
     app.include_router(DashboardController().router)
+    app.include_router(LearnersController().router)
+    app.include_router(ContentController().router)
+    app.include_router(ReadingController().router)
+    app.include_router(ServiceJobsController().router)
+    app.include_router(ComprehensionController().router)
     return app
 
 

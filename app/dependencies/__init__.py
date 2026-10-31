@@ -1,1 +1,1 @@
-"""Shared FastAPI dependencies."""
+"""Application-wide framework dependencies."""
