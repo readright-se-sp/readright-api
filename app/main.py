@@ -7,9 +7,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers.dashboard import DashboardController
+from app.dependencies.supabase import init_supabase_client
+from app.features.dashboard import DashboardController
 from app.routers.health import HealthController
-from app.services.db.supabase_client import init_supabase_client
 
 
 @asynccontextmanager

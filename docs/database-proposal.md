@@ -1,9 +1,11 @@
 # Database design
 
-[`schema-proposal.dbml`](schema-proposal.dbml) is the readable ERD source.
+[`schema-proposal.dbml`](schema-proposal.dbml) is the readable ERD.
 [`supabase/migrations/20261031000100_initial_readright_schema.sql`](../supabase/migrations/20261031000100_initial_readright_schema.sql)
-is the executable first migration. The migration has not been applied to a
-remote Supabase project.
+creates the initial schema, including sessions, media lineage, service jobs,
+normalized reading evidence, comprehension, and the dashboard summary view.
+The application will still be implemented feature by feature. No remote
+migration has been applied.
 
 ## Decisions in this revision
 
@@ -13,13 +15,12 @@ remote Supabase project.
   remain separate objects so vision and ASR can receive the appropriate media.
 - A selected analysis stores WPM, word recognition, and reading level for
   dashboard queries. The dashboard view averages completed selected analyses.
-- Service jobs track independent ASR, vision, prosody, and pronunciation
+- `service_jobs` tracks independent ASR, vision, prosody, and pronunciation
   attempts. The application owns dispatch, validation, normalized results, and
   user-facing status; the model services remain replaceable.
-- Published passage content and choices are immutable. The database checks
-  choice validity at publication, selected-choice membership, and answer
-  freezing after submission.
-- Application tables use RLS with no browser-facing table policies. The
+- Published passage content, tokens, questions, and choices are immutable; the
+  database validates choices at publication and freezes submitted answers.
+- Application tables use RLS without browser-facing table policies. The
   backend verifies the user token, then uses its server-only service key and
   scopes dashboard reads by that verified user ID.
 

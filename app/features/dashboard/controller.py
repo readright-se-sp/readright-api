@@ -2,10 +2,16 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from supabase import Client
 
-from app.models import LearnerDashboard
-from app.services.db.dashboard_repository import DashboardRepository
-from app.services.db.supabase_client import get_supabase_client
+from app.dependencies.supabase import get_supabase_client
+from app.features.dashboard.models import LearnerDashboard
+from app.features.dashboard.repository import DashboardRepository
+from app.features.dashboard.service import (
+    DashboardDataUnavailable,
+    DashboardService,
+    LearnerProfileNotFound,
+)
 
 logger = logging.getLogger(__name__)
 bearer_auth = HTTPBearer(auto_error=False)
@@ -13,19 +19,13 @@ bearer_auth = HTTPBearer(auto_error=False)
 
 def authenticated_user_id(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
+    client: Client = Depends(get_supabase_client),
 ) -> str:
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Bearer token required",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    client = get_supabase_client()
-    if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication service is not configured",
         )
 
     try:
@@ -56,8 +56,14 @@ def authenticated_user_id(
         ) from exc
 
 
+def get_dashboard_service(
+    client: Client = Depends(get_supabase_client),
+) -> DashboardService:
+    return DashboardService(DashboardRepository(client))
+
+
 class DashboardController:
-    """Learner dashboard endpoint."""
+    """HTTP controller for the learner dashboard feature."""
 
     def __init__(self) -> None:
         self.router = APIRouter(prefix="/v1/dashboard", tags=["dashboard"])
@@ -69,27 +75,19 @@ class DashboardController:
         )
 
     def get_dashboard(
-        self, learner_id: str = Depends(authenticated_user_id)
+        self,
+        learner_id: str = Depends(authenticated_user_id),
+        service: DashboardService = Depends(get_dashboard_service),
     ) -> LearnerDashboard:
-        client = get_supabase_client()
-        if client is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Database service is not configured",
-            )
-
         try:
-            dashboard = DashboardRepository(client).fetch(learner_id)
-        except Exception as exc:
-            logger.exception("Could not load learner dashboard")
+            return service.get_dashboard(learner_id)
+        except LearnerProfileNotFound as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Learner profile not found",
+            ) from exc
+        except DashboardDataUnavailable as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Dashboard data is unavailable",
             ) from exc
-
-        if dashboard is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Learner profile not found",
-            )
-        return dashboard

@@ -1,6 +1,6 @@
 Project readright_backend_services {
   database_type: 'PostgreSQL'
-  Note: 'Initial schema is in supabase/migrations. Supabase auth.users is managed by Supabase.'
+  Note: 'The initial schema is in supabase/migrations. Supabase auth.users is managed by Supabase.'
 }
 
 Enum passage_status {
@@ -187,7 +187,7 @@ Table reading_analyses {
     source_recording_id
   }
 
-  Note: 'Scores are persisted for dashboard summaries. SQL has a partial unique index: at most one selected run per session.'
+  Note: 'Scores are persisted for dashboard summaries. SQL has a partial unique index: at most one selected partial or completed run per session.'
 }
 
 Table service_jobs {
