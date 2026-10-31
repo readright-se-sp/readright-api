@@ -1,6 +1,6 @@
 # Models — Class Diagram
 
-## AssessmentResult (updated — RR-020)
+## Current runtime models
 
 ```mermaid
 classDiagram
@@ -15,7 +15,6 @@ classDiagram
         +omission: int
         +insertion: int
         +repetition: int
-        +refusal_to_pronounce: int
         +finger_pointing: bool
         +loss_of_place: bool
         +monotone_reading: bool
@@ -67,7 +66,6 @@ classDiagram
         +omission: int
         +insertion: int
         +repetition: int
-        +refusal_to_pronounce: int
     }
     class MiscueClassifierProtocol {
         <<Protocol>>
@@ -127,7 +125,6 @@ classDiagram
         +omission: int
         +insertion: int
         +repetition: int
-        +refusal_to_pronounce: int
         +finger_pointing: bool
         +loss_of_place: bool
         +monotone_reading: bool
@@ -172,7 +169,6 @@ classDiagram
         +omission: int
         +insertion: int
         +repetition: int
-        +refusal_to_pronounce: int
     }
     class GO3Result {
         <<TypedDict>>
@@ -185,9 +181,8 @@ classDiagram
 ```
 
 ## Referenced by
+
 - LLD: `../../lld/models/assessment.md`
-- LLD: `../../lld/utils/result-consolidator.md`
-- LLD: `../../lld/routers/analyze-controller.md`
 - LLD: `../../lld/models/transcription.md`
 - LLD: `../../lld/models/miscue.md`
 - LLD: `../../lld/models/scoring.md`
@@ -195,3 +190,6 @@ classDiagram
 - LLD: `../../lld/models/session.md`
 - LLD: `../../lld/models/media-extractor-model.md`
 - LLD: `../../lld/models/pipeline-results.md`
+- LLD: `../../lld/models/cv-detector.md`
+- LLD: `../../lld/models/prosody-detector.md`
+- LLD: `../../lld/models/proper-noun.md`

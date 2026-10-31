@@ -24,5 +24,5 @@ Data shape and fetch contract for Phil-IRI passage records.
 | Class diagram | [models.md](../../uml/class/models.md) |
 
 ## Related
-- HLD: [go2-pipeline.md](../../hld/go2-pipeline.md)
+- Database proposal: [database-proposal.md](../../database-proposal.md)
 - Source: `app/models/passage.py`

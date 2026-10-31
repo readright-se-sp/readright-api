@@ -1,33 +1,33 @@
-# `AssessmentResult` — Low-Level Design
+# `AssessmentResult` — current response model
 
-## Responsibility
-Pydantic model returned by `/analyze`. Holds all 15 fields (10 GO2 + 5 GO3). No logic — data shape only.
+`AssessmentResult` is the Pydantic response model returned by the current
+synchronous `/analyze` endpoint. It contains 15 fields: 9 GO2 aggregate fields,
+5 GO3 behavior flags, and `db_save_failed` metadata.
 
-## Implements
-N/A — pure Pydantic `BaseModel`.
+| Field | Type | Source |
+|---|---|---|
+| `wpm` | `float` | GO2 scoring |
+| `word_recognition_pct` | `float`, 0–100 | GO2 scoring |
+| `reading_level` | `Frustration`, `Instructional`, or `Independent` | GO2 scoring |
+| `correct` | `int` | GO2 miscue count |
+| `mispronunciation` | `int` | GO2 miscue count |
+| `substitution` | `int` | GO2 miscue count |
+| `omission` | `int` | GO2 miscue count |
+| `insertion` | `int` | GO2 miscue count |
+| `repetition` | `int` | GO2 miscue count |
+| `finger_pointing` | `bool` | GO3 CV detector |
+| `loss_of_place` | `bool` | GO3 CV detector |
+| `monotone_reading` | `bool` | GO3 prosody detector |
+| `word_by_word_reading` | `bool` | GO3 prosody detector |
+| `inaudible_reading` | `bool` | GO3 prosody detector |
+| `db_save_failed` | `bool` | API persistence metadata |
 
-## Fields
-| Field | Type | Constraint | Source |
-|---|---|---|---|
-| `wpm` | `float` | — | GO2 |
-| `word_recognition_pct` | `float` | `ge=0, le=100` | GO2 |
-| `reading_level` | `Literal[...]` | One of 3 exact strings | GO2 |
-| `correct` … `refusal_to_pronounce` | `int` | — | GO2 (7 miscue counts) |
-| `finger_pointing` | `bool` | — | GO3 (CVDetector) |
-| `loss_of_place` | `bool` | — | GO3 (CVDetector) |
-| `monotone_reading` | `bool` | — | GO3 (ProsodyAmplitudeDetector) |
-| `word_by_word_reading` | `bool` | — | GO3 (ProsodyAmplitudeDetector) |
-| `inaudible_reading` | `bool` | — | GO3 (ProsodyAmplitudeDetector) |
-
-## Edge Cases
-- `reading_level` must be exactly `"Frustration"`, `"Instructional"`, or `"Independent"` — Pydantic rejects all others
-- `word_recognition_pct` outside 0–100 raises `ValidationError` at runtime
-
-## Diagrams
-| Diagram | Link |
-|---|---|
-| Class diagram | [models.md](../../uml/class/models.md) |
+This model does not yet expose per-word events, phoneme evidence, analysis
+status, or comprehension results. Those belong to the proposed session-oriented
+API and database model, not this response type.
 
 ## Related
-- HLD: [system-overview.md](../../hld/system-overview.md)
-- Source: `app/models/assessment.py`
+
+- Source: [`app/models/assessment.py`](../../../app/models/assessment.py)
+- API contract: [`api-contract.md`](../../api-contract.md)
+- Target data model: [`database-proposal.md`](../../database-proposal.md)

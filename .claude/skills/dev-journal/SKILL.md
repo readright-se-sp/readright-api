@@ -1,18 +1,17 @@
 ---
 name: dev-journal
 description: >
-  Append a concise journal entry to docs/JOURNAL.md after each code generation
-  iteration. Tracks what was built, what changed, and any key decisions made.
-  Use after every generate-and-verify cycle, or when the user asks to "log this",
-  "journal this", "track this change", "write it down", or "update the changelog".
+  Write an implementation journal only when the user explicitly asks to log a
+  change, track an iteration, or update a changelog. Do not recreate the journal
+  automatically after code changes.
   One entry per iteration — never rewrite existing entries.
 ---
 
 # Dev Journal Skill
 
-After each iteration, append one entry to `docs/JOURNAL.md`. The journal is
-append-only — existing entries are never edited or deleted. It is a permanent
-record of what was built and why.
+The project no longer keeps an automatic `docs/JOURNAL.md`. Create or update a
+journal only when the user explicitly asks for one. If requested, keep entries
+concise and preserve existing history unless the user directs otherwise.
 
 ---
 
@@ -38,7 +37,7 @@ record of what was built and why.
 **Verification**
 - Pyright: `0 errors`
 - SOLID: ✓ / ⚠ `<note if any violation was found and fixed>`
-- Docs: `hld/<file>.md`, `lld/<domain>/<file>.md`, `uml/<type>/<file>.md`
+- Docs: list only the concise maintained docs that changed
 ```
 
 ---
@@ -57,7 +56,7 @@ record of what was built and why.
 
 ---
 
-## File Location
+## File Location (only when requested)
 
 `docs/JOURNAL.md` — in the project root `docs/` folder.
 
@@ -77,8 +76,7 @@ Then append the first entry below the header.
 
 ## When to Run
 
-This is the **last step** in the generate-and-verify loop — after docstrings and
-design docs are written. Append the entry, then include it in the final report
-so the user sees what was logged.
+Run only after an explicit user request. This is not part of the default
+generate-and-verify workflow.
 
 Do not show the journal entry for approval — it is a log, not code. Just write it.

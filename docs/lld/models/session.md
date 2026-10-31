@@ -1,32 +1,35 @@
-# `SessionRecord` + `SessionRepositoryProtocol` — Low-Level Design
+# `SessionRecord` + `SessionRepositoryProtocol` — current implementation
 
 ## Responsibility
-Data shape and persistence contract for a completed assessment session.
 
-## Implements
-[Models diagram](../../uml/class/models.md)
+Defines the flat record currently written to Supabase after a successful
+assessment and the persistence interface used by the orchestrator.
 
-## Fields — SessionRecord
+## `SessionRecord` fields
+
 | Field | Type | Notes |
 |---|---|---|
-| `learner_id` | `str` | UUID string; blank string skips insert (guarded by orchestrator) |
-| `passage_id` | `str` | Foreign key to `passages` table |
+| `learner_id` | `str` | UUID string; blank skips insert |
+| `passage_id` | `str` | Passage identifier |
 | `wpm` | `float` | |
 | `word_recognition_pct` | `float` | |
 | `reading_level` | `str` | |
-| `correct` … `refusal_to_pronounce` | `int` | 7 miscue count fields |
-| `finger_pointing` … `inaudible_reading` | `bool` | 5 behavioral flags |
+| `correct` | `int` | Correct event count |
+| `mispronunciation` | `int` | Miscue count |
+| `substitution` | `int` | Miscue count |
+| `omission` | `int` | Miscue count |
+| `insertion` | `int` | Miscue count |
+| `repetition` | `int` | Miscue count |
+| `finger_pointing` … `inaudible_reading` | `bool` | Five aggregate behavior flags |
 
-## Methods — SessionRepositoryProtocol
-| Method | Purpose | Edge cases |
-|---|---|---|
-| `insert(record)` | Persist session to DB | Raises `Exception` on DB error (non-fatal in orchestrator) |
+## Persistence behavior
 
-## Diagrams
-| Diagram | Link |
-|---|---|
-| Class diagram | [models.md](../../uml/class/models.md) |
+`SessionRepositoryProtocol.insert(record)` writes to the current `sessions`
+table. The orchestrator treats a write failure as non-fatal and returns
+`db_save_failed=true`. This flat shape is separate from the normalized,
+provisional model in [`database-proposal.md`](../../database-proposal.md).
 
 ## Related
-- HLD: [api-layer.md](../../hld/api-layer.md)
-- Source: `app/models/session.py`
+
+- Source: [`app/models/session.py`](../../../app/models/session.py)
+- Class diagram: [`models.md`](../../uml/class/models.md)

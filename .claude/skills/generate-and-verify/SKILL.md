@@ -18,7 +18,7 @@ report it as done. Never skip a step, even if the code looks obviously correct.
 ## The Loop
 
 ```
-GENERATE → SHOW → APPROVE → WRITE → PYRIGHT → SOLID-CHECK → if issues: FIX → repeat → DOCSTRINGS → DESIGN-DOCS → JOURNAL → REPORT → COMMIT?
+GENERATE → SHOW → APPROVE → WRITE → PYRIGHT → SOLID-CHECK → if issues: FIX → repeat → DOCSTRINGS → UPDATE RELEVANT DOCS → REPORT → COMMIT?
 ```
 
 ### Step 1 — Generate
@@ -109,21 +109,14 @@ Rules:
 - Don't restate the type annotations
 - Don't use Args:/Returns: sections
 
-### Step 7 — Design Docs
+### Step 7 — Relevant Docs
 
+Update only the concise maintained docs listed in
+`.claude/skills/design-docs/SKILL.md` when a code change affects their
+contracts. Do not add sequence diagrams, a journal, or per-class design pages
+unless the user asks.
 
-Generate or update the relevant HLD, LLD, and Mermaid UML files under `./docs/`.
-Follow `.claude/skills/design-docs/SKILL.md` — the table there maps each type of
-file written to which docs need creating or updating. Show docs for approval before
-writing, same as code.
-
-### Step 8 — Journal
-
-Append one entry to `docs/JOURNAL.md` following `.claude/skills/dev-journal/SKILL.md`.
-No approval needed — write it directly. Include it in the final report so the user
-can see what was logged.
-
-### Step 9 — Report
+### Step 8 — Report
 
 Once the loop exits cleanly, report:
 
@@ -145,7 +138,7 @@ Once the loop exits cleanly, report:
 
 Show the final file content after the report.
 
-### Step 10 — Commit
+### Step 9 — Commit
 
 After the report, ask the user:
 

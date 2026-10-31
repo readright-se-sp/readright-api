@@ -12,7 +12,7 @@ N/A
 ## Types
 | Name | Kind | Purpose |
 |---|---|---|
-| `MiscueType` | `Literal` type alias | The 7 valid miscue label strings |
+| `MiscueType` | `Literal` type alias | The 6 current runtime labels: `correct`, `mispronunciation`, `substitution`, `omission`, `insertion`, `repetition` |
 | `MiscueCounts` | `TypedDict` | Per-category count dict returned by `MiscueClassifier.classify()` |
 | `MiscueDetail` | `TypedDict` | One aligned word decision: `miscue_type`, `passage_word`/`transcript_word` (either may be `None`), `start`/`end` timing (`None` when no spoken word) |
 | `MiscueClassifierProtocol` | `Protocol` | Interface the pipeline depends on; `classify()` + `detail()`, both accept optional `proper_nouns: list[str]`; concrete wired in `dependencies.py` |
@@ -22,8 +22,10 @@ N/A
 | Diagram | Link |
 |---|---|
 | Models class diagram | [models.md](../../uml/class/models.md) |
-| GO2 class diagram | [go2-classes.md](../../uml/class/go2-classes.md) |
 
 ## Related
-- HLD: [go2-pipeline.md](../../hld/go2-pipeline.md)
+- API contract: [api-contract.md](../../api-contract.md)
 - Source: `app/models/miscue.py`
+
+The provisional database enum includes `refusal_to_pronounce` and
+`unassessable`; they are not current `MiscueType` values.

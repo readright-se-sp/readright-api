@@ -19,8 +19,7 @@ N/A
 | Diagram | Link |
 |---|---|
 | Models class diagram | [models.md](../../uml/class/models.md) |
-| GO2 class diagram | [go2-classes.md](../../uml/class/go2-classes.md) |
 
 ## Related
-- HLD: [go2-pipeline.md](../../hld/go2-pipeline.md)
+- API contract: [api-contract.md](../../api-contract.md)
 - Source: `app/models/scoring.py`

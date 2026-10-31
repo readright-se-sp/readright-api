@@ -23,5 +23,5 @@ Data shape and extraction contract for the ffmpeg media extraction step.
 | Class diagram | [models.md](../../uml/class/models.md) |
 
 ## Related
-- HLD: [api-layer.md](../../hld/api-layer.md)
+- Architecture: [ARCHITECTURE.md](../../../ARCHITECTURE.md)
 - Source: `app/models/media_extractor.py`

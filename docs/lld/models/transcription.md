@@ -20,9 +20,8 @@ Defines the shared data contract between the ASR layer and RR-022/RR-023: `WordS
 ## Diagrams
 | Diagram | Link |
 |---|---|
-| GO2 class diagram | [go2-classes.md](../../uml/class/go2-classes.md) |
 | Models diagram | [models.md](../../uml/class/models.md) |
 
 ## Related
-- HLD: [go2-pipeline.md](../../hld/go2-pipeline.md)
+- API contract: [api-contract.md](../../api-contract.md)
 - Source: `app/models/transcription.py`

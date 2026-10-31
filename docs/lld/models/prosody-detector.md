@@ -17,8 +17,8 @@ None — TypedDict and Protocol only.
 ## Diagrams
 | Diagram | Link |
 |---|---|
-| Class diagram | [go3-classes.md](../../uml/class/go3-classes.md) |
+| Class diagram | [models.md](../../uml/class/models.md) |
 
 ## Related
-- HLD: [go3-pipeline.md](../../hld/go3-pipeline.md)
+- AI service contract: [ai-service-contracts.md](../../ai-service-contracts.md)
 - Source: `app/models/prosody_detector.py`

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-FastAPI microservice for **ReadRight Module 2** — the audio + video reading assessment pipeline. A student records themselves reading a Phil-IRI passage; the service extracts WAV + MP4 from the upload, runs GO2 (ASR → miscue classification → WPM/scoring) and GO3 (computer-vision behavioral flags + prosody) in parallel, merges the results into a single `AssessmentResult`, and persists a session row to Supabase.
+FastAPI application for **ReadRight Module 2** — the audio + video reading assessment pipeline. The current code extracts WAV + MP4, runs WhisperX ASR and MediaPipe CV inside the same deployment, runs GO2 and GO3 in parallel, merges the results into an `AssessmentResult`, and attempts to persist a flat session row to Supabase. The target architecture separates ASR and MediaPipe CV into private services; that is a proposal documented in [ARCHITECTURE.md](ARCHITECTURE.md), [AI service contracts](docs/ai-service-contracts.md), and [API payloads](docs/api-contract.md). Do not describe the target service split as implemented in runtime code until the application is changed.
 
 ## Commands
 
@@ -48,7 +48,7 @@ app/
       scoring_engine.py         # WPM, word-recognition %, reading level
     go3/
       pipeline.py               # GO3Pipeline — CV + prosody in sequence
-      cv_detector.py            # MediaPipe finger-pointing / loss-of-place / word-by-word
+      cv_detector.py            # MediaPipe finger-pointing / loss-of-place
       prosody_detector.py       # Amplitude-based monotone / inaudible detection
     db/
       supabase_client.py        # Lazy singleton supabase-py client (service key)
@@ -95,11 +95,13 @@ ALLOWED_ORIGINS=["http://localhost:5173"]
 | RR-030 | GO3 CV detector (MediaPipe) | ✅ Done |
 | RR-032 | GO3 prosody detector | ✅ Done |
 
-Current branch focus: `chore/add_logs_exception_handling` — logging + error-handling polish across the orchestrator and `/analyze` endpoint.
+These rows are historical implementation milestones, not current branch or roadmap status.
 
-## Domain Rules (non-negotiable per SRS)
+## Current runtime behavior
 
-**Phil-IRI Miscue Taxonomy** (RR-022) — 5 categories only:
+The current Python classifier returns `correct`, `mispronunciation`, `substitution`, `omission`, `insertion`, and `repetition`. The provisional database schema also includes `refusal_to_pronounce` and `unassessable`; those are not implemented by the current classifier or response model.
+
+**Phil-IRI Miscue Rules** (current code):
 - `correct` — edit distance ≤ 1 (also: dropped morphological inflections `-ed`, `-s`, `-es`, `-d`, `-ing`; proper nouns from the passage's whitelist)
 - `mispronunciation` — phonetically similar, edit distance 2–3 (single-token only)
 - `substitution` — completely different word OR an entire N↔M `replace` span (1 passage word → multi-token phrase counts as ONE substitution event)
@@ -109,7 +111,7 @@ Current branch focus: `chore/add_logs_exception_handling` — logging + error-ha
 - On ambiguous single-word classification: prefer conservative label (mispronunciation > substitution)
 - ASR robustness: Filipino honorific stems (`mang`, `aling`, `ate`, `kuya`, `lola`, `lolo`) fused with a name in the transcript are split before alignment if both halves appear in the passage. A single transcript token with duration > 0.6s in a substitution emits a warning (likely ASR multi-word collapse).
 
-**WPM + Scoring Formulas** (RR-023):
+**WPM + Scoring Formulas** (current code):
 ```python
 wpm = total_passage_words / (last_word_end - first_word_start) * 60
 
@@ -117,7 +119,7 @@ wpm = total_passage_words / (last_word_end - first_word_start) * 60
 # (mispronunciation + substitution + omission + insertion + repetition)
 word_recognition_pct = (total_words - error_count) / total_words * 100
 
-# Reading level — boundary ties go to the LOWER classification
+# Reading level — boundary ties qualify for the HIGHER classification
 if word_recognition_pct >= 97:   reading_level = "Independent"
 elif word_recognition_pct >= 91: reading_level = "Instructional"
 else:                             reading_level = "Frustration"
@@ -137,14 +139,17 @@ else:                             reading_level = "Frustration"
 ## Project Skills
 
 `.claude/skills/` contains project-scoped workflow skills:
-- `generate-and-verify` — the main coding loop: GENERATE → SHOW → APPROVE → WRITE → PYRIGHT → SOLID-CHECK → DOCSTRINGS → DESIGN-DOCS → JOURNAL
+- `generate-and-verify` — the main coding loop: GENERATE → SHOW → APPROVE → WRITE → PYRIGHT → SOLID-CHECK → DOCSTRINGS → concise docs
 - `solid-oop` — SOLID + class-based OOP patterns for this project
 - `python-strong-types` — pyright strict, Python 3.12 typing rules
-- `design-docs` — HLD/LLD/UML generation under `docs/`
-- `dev-journal` — append-only `docs/JOURNAL.md`
+- `design-docs` — maintain only the concise architecture, API, model, and database docs
 
 Always invoke `generate-and-verify` before writing any Python file.
 
 ## Docs
 
-`docs/JOURNAL.md` — append-only iteration log. `docs/hld/`, `docs/lld/`, `docs/uml/` — Mermaid diagrams (VS Code Mermaid Viewer extension).
+Keep documentation concise. The maintained set is `ARCHITECTURE.md`,
+`docs/api-contract.md`, the database proposal and DBML, the AI boundary contract,
+and model references under `docs/lld/models/` and `docs/uml/class/models.md`.
+Proposals must be labeled as such; do not recreate sequence diagrams or a
+change journal unless requested.
