@@ -17,7 +17,7 @@ Maintain only:
   integrations are in scope.
 - `docs/database-proposal.md` and `docs/schema-proposal.dbml` for data model
   decisions.
-- `docs/lld/models/` and `docs/uml/class/models.md` for data shapes.
+- `docs/models.md` for data shapes.
 
 Label unimplemented designs as proposals. Keep the current implementation
 distinct from target architecture. Do not add sequence diagrams, a journal,

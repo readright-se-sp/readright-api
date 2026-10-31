@@ -1,9 +1,9 @@
 # AI service contracts (proposal)
 
-The target design runs ASR and MediaPipe vision as separate deployable services.
-These payloads are versioned examples, not live endpoints. The API currently
-loads WhisperX and MediaPipe in-process; see [current versus target
-architecture](../ARCHITECTURE.md).
+ASR and MediaPipe CV are separate private services. These versioned payloads
+propose their integration contract; this backend has no clients or local
+inference implementations. See
+[architecture](../ARCHITECTURE.md).
 
 ## Boundary and ownership
 

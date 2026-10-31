@@ -1,72 +1,40 @@
-# Database proposal
+# Database design
 
-The accompanying [`schema-proposal.dbml`](schema-proposal.dbml) captures a
-candidate PostgreSQL model for learner sessions, recordings, rerunnable
-analyses, independently dispatched AI jobs, normalized evidence, and
-comprehension attempts.
+[`schema-proposal.dbml`](schema-proposal.dbml) is the readable ERD source.
+[`supabase/migrations/20261031000100_initial_readright_schema.sql`](../supabase/migrations/20261031000100_initial_readright_schema.sql)
+is the executable first migration. The migration has not been applied to a
+remote Supabase project.
 
-**This is a discussion artifact, not the current database schema or a migration.**
-The repository currently reads passages and writes a flat `sessions` row in
-Supabase. Confirm ownership, privacy/retention rules, reporting queries, and
-service boundaries before implementing this proposal. Table names, fields,
-enums, indexes, and payloads may change.
+## Decisions in this revision
 
-## Main modeling choices
+- A session has `assigned_at` and optional `reading_started_at`; assignment is
+  not counted as a reading start.
+- A recording can reference its source recording. Video and extracted audio
+  remain separate objects so vision and ASR can receive the appropriate media.
+- A selected analysis stores WPM, word recognition, and reading level for
+  dashboard queries. The dashboard view averages completed selected analyses.
+- Service jobs track independent ASR, vision, prosody, and pronunciation
+  attempts. The application owns dispatch, validation, normalized results, and
+  user-facing status; the model services remain replaceable.
+- Published passage content and choices are immutable. The database checks
+  choice validity at publication, selected-choice membership, and answer
+  freezing after submission.
+- Application tables use RLS with no browser-facing table policies. The
+  backend verifies the user token, then uses its server-only service key and
+  scopes dashboard reads by that verified user ID.
 
-- `sessions` captures the learner, assigned passage, grade at assignment, and
-  policy version. Later grade promotion does not rewrite historical sessions.
-- `recordings` stores private object-storage coordinates and media metadata;
-  binary media and expiring URLs do not belong in PostgreSQL.
-- `reading_analyses` preserves reruns and records the selected result plus the
-  pipeline and scoring policy versions.
-- `service_jobs` records each ASR, vision, prosody, or pronunciation attempt.
-  Raw JSON is diagnostic; normalized event/observation rows drive reporting.
-- `reading_events` stores word/phrase-level reading evidence. A review is an
-  overlay on the original machine classification, so machine output remains
-  unchanged.
-- `phoneme_events` is optional pronunciation evidence. A missing actual
-  phoneme must not be fabricated.
-- `comprehension_answers` stores learner selections. Correctness is resolved
-  server-side; do not expose `question_choices.is_correct` in learner payloads.
+The bad trailing `Ref` in the supplied sample was omitted. The job already has
+an `analysis_id` foreign key; a job ID must not reference its own analysis ID.
 
-## Database rules needing implementation review
+## Apply locally or remotely
 
-DBML does not express every PostgreSQL invariant. Implement and review these
-with migrations, constraints, triggers, or transaction logic as appropriate:
+Install the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started),
+then run `supabase start` and `supabase db reset` to apply migrations to a local
+stack. Remote deployment is a separate step: link the intended project, review
+`supabase db push --dry-run`, then run `supabase db push` when ready. This repo
+has no configured project link, and no remote migration has been run.
 
-- one selected analysis per session;
-- one current service job per analysis and service kind;
-- immutable published passage content/questions/choices (retirement is
-  allowed, mutation is not);
-- positive token and question positions, ordered content, and valid question
-  choice counts;
-- exactly one correct choice for each published question;
-- answers may select only a choice belonging to their question, and submitted
-  attempts are frozen;
-- cross-check that session, analysis, recording, passage token, event, and
-  service-job references all belong to the same assessment context;
-- required timestamp/status transitions and valid duration/confidence ranges.
-
-The previous final `Ref` line in the supplied sample was malformed and
-redundant: `service_jobs.analysis_id` already declares its foreign key to
-`reading_analyses.analysis_id`. It is omitted from the DBML copy.
-
-## Review points
-
-- Decide whether `auth.users` stays in Supabase Auth and whether learner records
-  are one-to-one with that identity.
-- Decide whether a session may have more than one recording and whether media
-  kind should distinguish video-with-audio from standalone audio.
-- A video upload produces a video input for CV and an extracted audio input for
-  ASR. The sample's `source_recording_id` note points to the ASR audio; confirm
-  whether the derived WAV is a separate `recordings` row and whether to add a
-  `derived_from_recording_id` or artifact table to preserve provenance.
-- The CV result example has structured evidence intervals, while
-  `behavior_observations` currently has only `evidence_note`. Add start/end
-  columns if learner or staff views need to seek to evidence timestamps.
-- Clarify `partial` analysis semantics, required versus optional services,
-  retries, and the selected-analysis workflow.
-- Confirm whether transcripts and evidence require row-level encryption,
-  access auditing, and deletion propagation to object storage.
-- Add explicit indexes and retention policy from expected workloads rather
-  than treating this initial index list as final.
+The schema is an initial working baseline. Before production, confirm media and
+transcript retention, user deletion/storage cleanup, supported grade values,
+service retry policy, and whether staff reporting needs additional access
+policies.

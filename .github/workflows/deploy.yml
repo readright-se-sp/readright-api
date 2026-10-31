@@ -11,7 +11,7 @@ name: Deploy
 #
 # One-time host setup (not done by CI — keeps secrets off GitHub):
 #   mkdir -p /opt/readright
-#   cp .env.example /opt/readright/.env   # then fill in real API_KEY, SUPABASE_*, API_DOMAIN, ACME_EMAIL, IMAGE
+#   cp .env.example /opt/readright/.env   # then fill in SUPABASE_*, API_DOMAIN, ACME_EMAIL, IMAGE
 #   point $API_DOMAIN DNS at the box
 
 on:
@@ -35,21 +35,16 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgles2 libegl1
-
       - name: Install dependencies
         run: |
           python -m venv .venv
-          .venv/bin/pip install -r requirements.lock.txt pyright
+          .venv/bin/pip install -r requirements.txt pyright
 
       - name: Pyright
         run: .venv/bin/pyright app/
 
       - name: Pytest
         run: .venv/bin/pytest
-        env:
-          API_KEY: test-api-key
 
   build-and-push:
     name: Build & Push Image

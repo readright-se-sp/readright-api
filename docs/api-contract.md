@@ -1,119 +1,95 @@
-# Frontend API and payload proposals
+# API contracts
 
-This document separates the endpoint implemented by this repository from a
-possible frontend contract for the service-oriented design. Proposed `/v1`
-routes below are examples for discussion; they are not currently registered by
-the FastAPI application.
+The backend exposes health and a learner dashboard. Assessment, media upload,
+and comprehension routes below are the next frontend-facing contracts; they
+are not implemented yet. ASR and vision are private services described in
+[`ai-service-contracts.md`](ai-service-contracts.md).
 
-## Implemented endpoint
-
-### `POST /analyze`
-
-Synchronous multipart upload. The API key is intended for trusted callers; a
-static `X-API-Key` must not be embedded in a browser or mobile application.
-
-| Field | Type | Required | Notes |
-|---|---|---:|---|
-| `file` | binary | yes | Audio or video recording supported by FFmpeg |
-| `passage_id` | string | yes | Existing passage identifier |
-| `learner_id` | string | no | Blank skips the current session insert |
-| `X-API-Key` | header | yes | Matches backend `API_KEY` setting |
-
-The current multipart fields are `file`, `passage_id`, and optional
-`learner_id`. A trusted server-side caller may send them with the required
-`X-API-Key`. This endpoint is not a safe direct browser integration because it
-uses a reusable static key. The proposed browser flow is documented below.
-
-Implemented `200` response (`AssessmentResult`):
-
-```json
-{
-  "wpm": 85.5,
-  "word_recognition_pct": 92.3,
-  "reading_level": "Instructional",
-  "correct": 48,
-  "mispronunciation": 2,
-  "substitution": 1,
-  "omission": 1,
-  "insertion": 0,
-  "repetition": 1,
-  "finger_pointing": false,
-  "loss_of_place": false,
-  "monotone_reading": false,
-  "word_by_word_reading": false,
-  "inaudible_reading": false,
-  "db_save_failed": false
-}
-```
-
-The current response contains aggregate counts and behavior flags. It does not
-include per-word `reading_events`, phoneme alignments, comprehension data, or
-session/analysis IDs.
-
-Error responses from `POST /analyze`:
-
-| Status | Current body |
-|---|---|
-| `401` | `{"detail":"Invalid API key"}` |
-| `413` | `{"error":"...","code":"FILE_TOO_LARGE"}` |
-| `503` | `{"error":"...","code":"BUSY"}` |
-| `500` | `{"error":"...","code":"EXTRACTION_FAILED"}` or `ANALYSIS_FAILED` or `CONSOLIDATION_FAILED` |
+## Implemented routes
 
 ### `GET /health`
 
-Unauthenticated liveness endpoint. The current response is `{"status":"ok"}`.
-
-## Proposed frontend flow
-
-Use the backend as the single public API. The frontend authenticates with the
-application's user token; the backend derives `learner_id` from that identity.
-The browser gets a temporary object-storage upload URL from the backend, sends
-the recording directly to private storage, then asks the backend to start
-analysis. The ASR and CV services remain private and are never called from the
-frontend.
-
-The route names and bodies below are illustrative. Choose and version them
-before implementation.
-
-### 1. List passages and start an assigned session
-
-`GET /v1/passages?grade_id=4&language_code=en`
-
-Return only learner-safe content. Do not include internal publication fields or
-answer keys.
-
-`POST /v1/sessions`
+Unauthenticated liveness check:
 
 ```json
-{
-  "passage_id": "4ca3f2d0-7f6c-4caf-a45e-1c23a0e42656"
-}
+{ "status": "ok" }
 ```
 
-The authenticated user determines the learner. The server captures the
-learner's grade and assignment-policy version at assignment time.
+### `GET /v1/dashboard`
+
+Send the signed-in user's Supabase access token:
+
+```http
+Authorization: Bearer <access-token>
+```
+
+The backend verifies the token with Supabase Auth and uses its user ID to find
+the learner profile. The response contains aggregate reading progress and up
+to ten latest sessions. It never accepts a learner ID from the browser.
 
 ```json
 {
-  "session_id": "b4e706a3-f90c-4322-a67a-2d15e8547458",
-  "status": "assigned",
-  "passage": {
-    "passage_id": "4ca3f2d0-7f6c-4caf-a45e-1c23a0e42656",
-    "title": "A Day at the River",
-    "language_code": "en",
-    "content": "...",
-    "tokens": [
-      { "position": 1, "text": "Maya", "is_proper_noun": true },
-      { "position": 2, "text": "walked", "is_proper_noun": false }
-    ]
+  "learner": {
+    "user_id": "4b255bc3-46da-4f8f-9a7d-1ef91cc5532d",
+    "display_name": "Maya",
+    "grade_id": 4,
+    "grade_label": "Grade 4"
   },
-  "created_at": "2026-10-31T09:00:00Z"
+  "summary": {
+    "sessions_total": 8,
+    "sessions_completed": 6,
+    "sessions_in_progress": 2,
+    "average_wpm": 85.5,
+    "average_word_recognition_pct": 92.3
+  },
+  "recent_sessions": [
+    {
+      "session_id": "b4e706a3-f90c-4322-a67a-2d15e8547458",
+      "status": "completed",
+      "assigned_at": "2026-10-31T09:00:00Z",
+      "completed_at": "2026-10-31T09:03:00Z",
+      "passage": {
+        "passage_id": "4ca3f2d0-7f6c-4caf-a45e-1c23a0e42656",
+        "title": "A Day at the River",
+        "language_code": "en"
+      },
+      "reading": {
+        "analysis_id": "9d781d54-70bb-49c4-9cd0-11fd3e230c23",
+        "status": "completed",
+        "wpm": 85.5,
+        "word_recognition_pct": 92.3,
+        "reading_level": "Instructional"
+      }
+    }
+  ]
 }
 ```
 
-### 2. Request a recording upload target
+`reading` is `null` until a selected analysis exists. Average scores include
+completed selected analyses only. Errors: `401` for a missing/invalid token,
+`404` when the authenticated user has no learner profile, and `503` when
+Supabase is unavailable or not configured.
 
-`POST /v1/sessions/{session_id}/recordings`
+## Proposed learner flow
+
+These routes are a starting contract and are not registered in FastAPI.
+
+### Assign a passage
+
+`GET /v1/passages?grade_id=4&language_code=en` returns published learner-safe
+passage data. It must omit internal fields and answer keys.
+
+`POST /v1/sessions` body:
+
+```json
+{ "passage_id": "4ca3f2d0-7f6c-4caf-a45e-1c23a0e42656" }
+```
+
+The backend derives the learner from the token and snapshots grade and policy.
+
+### Request an upload target
+
+`POST /v1/sessions/{session_id}/recordings` body:
 
 ```json
 {
@@ -141,22 +117,19 @@ Example response:
 }
 ```
 
-The URL is temporary and must not be saved in the database or logs. The backend
-stores only the private bucket/path and metadata.
+Upload bytes directly to private object storage. The URL is temporary; store
+only the bucket and object path. A video produces a video input for vision and
+an audio derivative for ASR. The backend records the derivative's source link.
 
-### 3. Upload, then submit for analysis
+### Submit and poll
 
-The frontend `PUT`s the bytes to the returned URL. After storage confirms the
-upload, it calls `POST /v1/sessions/{session_id}/submit`:
+After upload, `POST /v1/sessions/{session_id}/submit` accepts:
 
 ```json
-{
-  "recording_id": "065afbf2-a933-4f52-a5a5-e90f21e21a0a"
-}
+{ "recording_id": "065afbf2-a933-4f52-a5a5-e90f21e21a0a" }
 ```
 
-The backend verifies ownership and object existence, creates an analysis and
-service jobs, then returns promptly:
+It should enqueue analysis and return promptly:
 
 ```json
 {
@@ -167,101 +140,15 @@ service jobs, then returns promptly:
 }
 ```
 
-For a video upload, the backend must make both inputs available: the original
-video for CV and extracted audio for ASR. The proposal assumes the extracted
-audio is stored as a private audio object; the database model still needs a
-clear link from that derivative back to its source video.
+`GET /v1/sessions/{session_id}` returns lifecycle state and service progress.
+`GET /v1/sessions/{session_id}/results` returns selected scores, normalized
+reading events, and behavior observations. The frontend must not call ASR or
+vision services directly or infer completion from a fixed delay.
 
-### 4. Poll session and read the result
+### Comprehension
 
-`GET /v1/sessions/{session_id}` returns one of the session lifecycle states
-(`assigned`, `reading`, `processing`, `comprehension`, `completed`, `failed`)
-and the selected analysis when available. A processing response can include
-service status without exposing internal signed URLs:
-
-```json
-{
-  "session_id": "b4e706a3-f90c-4322-a67a-2d15e8547458",
-  "status": "processing",
-  "analysis": {
-    "analysis_id": "9d781d54-70bb-49c4-9cd0-11fd3e230c23",
-    "status": "partial",
-    "services": {
-      "asr": "completed",
-      "vision": "running"
-    }
-  }
-}
-```
-
-On completion, `GET /v1/sessions/{session_id}/results` returns normalized
-reporting data. Example (field names are proposed):
-
-```json
-{
-  "analysis_id": "9d781d54-70bb-49c4-9cd0-11fd3e230c23",
-  "status": "completed",
-  "transcript": "Maya walked the river.",
-  "scores": {
-    "wpm": 85.5,
-    "word_recognition_pct": 92.3,
-    "reading_level": "Instructional"
-  },
-  "miscue_counts": {
-    "correct": 4,
-    "mispronunciation": 0,
-    "substitution": 0,
-    "omission": 1,
-    "insertion": 0,
-    "repetition": 0
-  },
-  "behaviors": [
-    { "type": "finger_pointing", "outcome": "detected", "confidence": 0.91 },
-    { "type": "loss_of_place", "outcome": "not_detected", "confidence": 0.86 }
-  ],
-  "events": [
-    {
-      "event_order": 1,
-      "detected_type": "omission",
-      "expected_start_position": 3,
-      "expected_end_position": 3,
-      "heard_text": null,
-      "audio_start_seconds": null,
-      "audio_end_seconds": null,
-      "confidence": 0.78
-    }
-  ]
-}
-```
-
-`not_assessable` must remain distinct from `not_detected`. Do not turn missing or
-low-quality evidence into a negative behavior result.
-
-### 5. Comprehension, when enabled
-
-`GET /v1/sessions/{session_id}/comprehension` returns prompts and choices. The
-learner payload must never include `is_correct`:
-
-```json
-{
-  "attempt_id": "21d37e7c-882f-41e6-b514-8eb818840d7f",
-  "status": "in_progress",
-  "questions": [
-    {
-      "question_id": "39d62932-0418-4e33-a0dc-11ba6bcfc8a1",
-      "question_order": 1,
-      "prompt": "Where did Maya go?",
-      "points_possible": 1,
-      "choices": [
-        { "choice_id": "11111111-1111-4111-8111-111111111111", "choice_order": 1, "text": "To the river" },
-        { "choice_id": "22222222-2222-4222-8222-222222222222", "choice_order": 2, "text": "To the market" }
-      ]
-    }
-  ]
-}
-```
-
-Submit answers with `PUT /v1/comprehension-attempts/{attempt_id}/answers`:
+`GET /v1/sessions/{session_id}/comprehension` returns questions and choices,
+never `is_correct`. `PUT /v1/comprehension-attempts/{attempt_id}/answers` body:
 
 ```json
 {
@@ -274,18 +161,12 @@ Submit answers with `PUT /v1/comprehension-attempts/{attempt_id}/answers`:
 }
 ```
 
-The server validates that each choice belongs to its question and that the
-attempt belongs to the authenticated learner. Freeze answers after submission.
+The backend validates attempt ownership and choice/question membership, grades
+server-side, and freezes answers after submission.
 
-## Frontend integration rules
+## Client rules
 
-- Send a user access token to the backend; never ship the Supabase service key,
-  AI service credentials, or a reusable backend API key to clients.
-- Treat `session_id` and `analysis_id` as opaque identifiers.
-- Upload media to private storage using the one-use/short-lived target; do not
-  proxy large video bodies through the frontend application server unless that
-  is an intentional deployment choice.
-- Render service/analysis status from backend responses. Do not infer completion
-  from a fixed delay.
-- The current endpoint is synchronous; the proposed session flow is
-  asynchronous. They should not be presented as the same API version.
+- Never ship the Supabase service key or AI service credentials to a client.
+- Treat session, analysis, recording, and job IDs as opaque identifiers.
+- Render status from API responses; do not infer it from elapsed time.
+- Keep service payloads and model-specific fields behind the backend boundary.

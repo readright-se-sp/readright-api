@@ -6,13 +6,12 @@
 # the internet directly.
 #
 # Setup on the host:
-#   1. cp .env.example .env   &&   fill in API_KEY, SUPABASE_*, API_DOMAIN, ACME_EMAIL
+#   1. cp .env.example .env   &&   fill in SUPABASE_*, API_DOMAIN, ACME_EMAIL
 #   2. point $API_DOMAIN's DNS A record at this box
 #   3. docker compose pull && docker compose up -d
 #
 # On a PaaS that already gives you HTTPS (Fly.io / Render / Cloud Run) you don't
-# need the caddy service — run the api image directly and enforce upload size via
-# MAX_UPLOAD_MB (the app already does).
+# need the caddy service — run the API image directly.
 
 services:
   api:
@@ -25,7 +24,7 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      start_period: 90s  # base.en int8 loads fast; generous margin for a cold/busy box
+      start_period: 10s
       retries: 3
 
   caddy:

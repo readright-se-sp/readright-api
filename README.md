@@ -1,54 +1,33 @@
-# ReadRight API
+# ReadRight backend
 
-FastAPI service for ReadRight's reading assessment pipeline. The current
-implementation accepts a recording at `POST /analyze`, runs WhisperX and
-MediaPipe in the API process, and returns an aggregate assessment. The target
-design moves ASR and MediaPipe vision into independently deployed services.
-That separation is documented as a proposal; it is not yet reflected in the
-runtime code.
+FastAPI backend for ReadRight. Local ASR, MediaPipe CV, prosody analysis, and
+the synchronous `/analyze` pipeline have been removed. ASR and vision are
+separate service boundaries; the backend currently provides health and a
+learner dashboard API.
 
-## Documentation
+## Docs
 
-- [Documentation guide](docs/README.md)
-- [Architecture overview](ARCHITECTURE.md) — current implementation and target
-  boundaries.
-- [Frontend API and payload proposals](docs/api-contract.md) — existing
-  `/analyze` contract and suggested session/upload/status flow.
-- [AI service contracts](docs/ai-service-contracts.md) — versioned ASR and
-  vision job/result examples.
-- [Database proposal](docs/database-proposal.md) — review notes for the
-  provisional model in `docs/schema-proposal.dbml`.
+- [Architecture](ARCHITECTURE.md)
+- [API contracts](docs/api-contract.md)
+- [Models](docs/models.md)
+- [Database design and migrations](docs/database-proposal.md)
+- [AI service payloads](docs/ai-service-contracts.md)
 
-## Requirements
+## Run locally
 
-- Python 3.12
-- FFmpeg
-- Supabase project for the current passage/session repositories
-
-## Setup
+Requires Python 3.12. Configure Supabase Auth and database access for the
+dashboard endpoint.
 
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-```
-
-Fill in the required API and Supabase settings in `.env`. Install FFmpeg using
-your operating system's package manager.
-
-## Run locally
-
-```bash
 uvicorn app.main:app --reload
 ```
 
-The current endpoint is `POST /analyze` and requires `X-API-Key`. See the
-[implemented API contract](docs/api-contract.md#implemented-endpoint). Do not
-put a reusable backend API key or Supabase service key in frontend code.
+`GET /health` is public. `GET /v1/dashboard` requires a Supabase user access
+token and a matching `learners` row. See [API contracts](docs/api-contract.md).
 
-## Deployment
-
-`docker-compose.yml` describes the current single API container behind Caddy.
-It does not deploy the proposed ASR or CV services. Deployment topology for
-those services remains to be decided.
+Database migrations live under `supabase/migrations/`. Local Supabase
+development is described in [database design](docs/database-proposal.md).
