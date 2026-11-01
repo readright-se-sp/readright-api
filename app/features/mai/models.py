@@ -1,8 +1,9 @@
 from decimal import Decimal
 from typing import Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 MiscueType = Literal[
@@ -21,10 +22,18 @@ class AnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     request_id: UUID
-    video_url: HttpUrl
+    video_url: str = Field(json_schema_extra={"format": "uri"})
     passage_title: str = Field(min_length=1)
     passage_content: str = Field(min_length=1)
     output_key_prefix: str | None = None
+
+    @field_validator("video_url")
+    @classmethod
+    def require_https_video_url(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise ValueError("video_url must use HTTPS")
+        return value
 
 
 class Miscue(BaseModel):
@@ -89,3 +98,16 @@ class ErrorResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     error: ErrorBody
+
+
+class AnalysisSubmission(BaseModel):
+    request_id: UUID
+    status: Literal["accepted"]
+    status_url: str
+
+
+class AnalysisStatus(BaseModel):
+    request_id: UUID
+    status: Literal["queued", "running", "completed", "failed"]
+    result: AnalysisResponse | None = None
+    error: ErrorBody | None = None

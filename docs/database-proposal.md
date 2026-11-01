@@ -5,8 +5,8 @@
 creates the initial schema, including sessions, media lineage, service jobs,
 normalized reading evidence, comprehension, and the dashboard summary view.
 [`supabase/migrations/20261101070019_add_mai_analysis_support.sql`](../supabase/migrations/20261101070019_add_mai_analysis_support.sql)
-adds the MAI job kind, response fields and transaction-backed start,
-completion, and failure functions.
+adds the MAI job kind, response fields and transaction-backed enqueue, worker
+claim, completion, and failure functions.
 API code is grouped by feature, with shared CRUD mechanics under
 `app/features/shared`.
 

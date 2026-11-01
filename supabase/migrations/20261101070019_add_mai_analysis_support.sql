@@ -11,11 +11,12 @@ ALTER TYPE public.behavior_type ADD VALUE IF NOT EXISTS 'disregard_punctuation';
 ALTER TYPE public.behavior_type ADD VALUE IF NOT EXISTS 'lack_expression';
 
 ALTER TABLE public.reading_analyses
-  ADD COLUMN reading_score numeric,
-  ALTER COLUMN wpm TYPE numeric;
+  ADD COLUMN reading_score numeric;
 
 COMMENT ON COLUMN public.reading_analyses.reading_score IS
   'MAI overall reading score. Kept separate from word_recognition_pct; range is not constrained until the MAI scoring scale is finalized.';
+COMMENT ON COLUMN public.reading_analyses.wpm IS
+  'MAI words per minute stored using the existing numeric(7,2) precision; the complete original value is retained in service_jobs.response_payload.';
 
 ALTER TABLE public.reading_events
   ADD COLUMN actual_phrase text,
@@ -66,8 +67,8 @@ BEGIN
 END;
 $$;
 
--- Claim one logical MAI request before making the network call. The request ID
--- is also the reading_analyses.analysis_id, so retries reuse one service job.
+-- Create or requeue one logical MAI request. The request ID is also the
+-- reading_analyses.analysis_id, so caller retries reuse one service job.
 CREATE OR REPLACE FUNCTION public.start_mai_analysis(
   p_request_id uuid,
   p_request_sha256 text,
@@ -124,9 +125,23 @@ BEGIN
     IF job_row.status = 'succeeded' AND job_row.response_payload IS NOT NULL THEN
       RETURN jsonb_build_object('state', 'completed', 'response', job_row.response_payload);
     END IF;
-    IF job_row.status IN ('pending', 'dispatching', 'running')
-       AND job_row.lease_expires_at > now() THEN
-      RETURN jsonb_build_object('state', 'in_progress');
+    IF job_row.status = 'dispatching' AND job_row.lease_expires_at > now() THEN
+      -- A repeated POST safely republishes the message if the API process
+      -- crashed after committing this row but before sending to SQS. Worker
+      -- claims make duplicate messages harmless.
+      RETURN jsonb_build_object(
+        'state', 'dispatching', 'attempt_number', job_row.attempt_number
+      );
+    END IF;
+    IF job_row.status = 'pending' AND job_row.lease_expires_at > now() THEN
+      RETURN jsonb_build_object(
+        'state', 'in_progress', 'attempt_number', job_row.attempt_number
+      );
+    END IF;
+    IF job_row.status = 'running' AND job_row.lease_expires_at > now() THEN
+      RETURN jsonb_build_object(
+        'state', 'in_progress', 'attempt_number', job_row.attempt_number
+      );
     END IF;
 
     IF analysis_row.is_selected THEN
@@ -144,11 +159,12 @@ BEGIN
     END IF;
 
     UPDATE public.service_jobs
-       SET status = 'running',
+       SET status = 'dispatching',
            service_name = p_service_name,
-           started_at = now(),
-           deadline_at = now() + interval '120 seconds',
-           lease_expires_at = now() + interval '150 seconds',
+           attempt_number = attempt_number + 1,
+           started_at = NULL,
+           deadline_at = NULL,
+           lease_expires_at = now() + interval '300 seconds',
            finished_at = NULL,
            response_payload = NULL,
            failure_code = NULL,
@@ -176,31 +192,119 @@ BEGIN
     INSERT INTO public.service_jobs (
       session_id, analysis_id, input_recording_id, kind, service_name,
       attempt_number, required_for_completion, status, idempotency_key,
-      request_schema_version, request_sha256, started_at, deadline_at,
-      lease_expires_at
+      request_schema_version, request_sha256, lease_expires_at
     ) VALUES (
       analysis_row.session_id, p_request_id, analysis_row.source_recording_id,
-      'mai', p_service_name, next_attempt, true, 'running', p_request_id,
-      '1.1.0', p_request_sha256, now(), now() + interval '120 seconds',
-      now() + interval '150 seconds'
+      'mai', p_service_name, next_attempt, true, 'dispatching', p_request_id,
+      '1.1.0', p_request_sha256, now() + interval '300 seconds'
     ) RETURNING * INTO job_row;
   END IF;
 
   UPDATE public.reading_analyses
-     SET status = 'running', failure_code = NULL, finished_at = NULL
+     SET status = 'pending', failure_code = NULL, finished_at = NULL
    WHERE analysis_id = p_request_id AND NOT is_selected;
 
   RETURN jsonb_build_object(
     'state', 'started',
     'service_job_id', job_row.service_job_id,
+    'attempt_number', job_row.attempt_number,
     'session_id', analysis_row.session_id,
     'source_recording_id', analysis_row.source_recording_id
   );
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.claim_mai_analysis(
+  p_request_id uuid,
+  p_attempt_number integer,
+  p_service_name text
+) RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  job_row public.service_jobs%ROWTYPE;
+BEGIN
+  SELECT * INTO job_row
+    FROM public.service_jobs
+   WHERE idempotency_key = p_request_id AND kind = 'mai'
+   FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'MAI service job not found';
+  END IF;
+  IF job_row.status = 'succeeded' AND job_row.response_payload IS NOT NULL THEN
+    RETURN jsonb_build_object('state', 'completed', 'response', job_row.response_payload);
+  END IF;
+  IF job_row.attempt_number <> p_attempt_number THEN
+    RETURN jsonb_build_object('state', 'stale');
+  END IF;
+  IF job_row.status = 'running' AND job_row.lease_expires_at > now() THEN
+    RETURN jsonb_build_object('state', 'in_progress');
+  END IF;
+  IF job_row.status = 'pending' AND job_row.lease_expires_at > now() THEN
+    RETURN jsonb_build_object('state', 'in_progress');
+  END IF;
+  IF job_row.status NOT IN ('pending', 'dispatching')
+     AND NOT (job_row.status = 'running' AND job_row.lease_expires_at <= now()) THEN
+    RETURN jsonb_build_object('state', 'stale');
+  END IF;
+
+  UPDATE public.service_jobs
+     SET status = 'running',
+         service_name = p_service_name,
+         started_at = now(),
+         deadline_at = now() + interval '120 seconds',
+         lease_expires_at = now() + interval '150 seconds'
+   WHERE service_job_id = job_row.service_job_id;
+  UPDATE public.reading_analyses
+     SET status = 'running', failure_code = NULL, finished_at = NULL
+   WHERE analysis_id = p_request_id AND NOT is_selected;
+
+  RETURN jsonb_build_object('state', 'started');
+END;
+$$;
+
+-- Release a worker claim after a retryable MAI error. SQS controls when the
+-- message becomes visible again; the database should then read as queued.
+CREATE OR REPLACE FUNCTION public.release_mai_analysis(
+  p_request_id uuid,
+  p_attempt_number integer,
+  p_retry_after_seconds integer
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  UPDATE public.service_jobs
+     SET status = 'pending',
+         started_at = NULL,
+         deadline_at = NULL,
+         lease_expires_at = now() + make_interval(
+           secs => greatest(p_retry_after_seconds, 1)
+         )
+   WHERE idempotency_key = p_request_id
+     AND kind = 'mai'
+     AND attempt_number = p_attempt_number
+     AND status = 'running';
+
+  UPDATE public.reading_analyses
+     SET status = 'pending', failure_code = NULL, finished_at = NULL
+   WHERE analysis_id = p_request_id AND NOT is_selected
+     AND EXISTS (
+       SELECT 1 FROM public.service_jobs
+        WHERE idempotency_key = p_request_id
+          AND kind = 'mai'
+          AND attempt_number = p_attempt_number
+          AND status = 'pending'
+     );
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.complete_mai_analysis(
   p_request_id uuid,
+  p_attempt_number integer,
   p_response jsonb
 ) RETURNS jsonb
 LANGUAGE plpgsql
@@ -227,6 +331,9 @@ BEGIN
   END IF;
   IF job_row.status = 'succeeded' AND job_row.response_payload IS NOT NULL THEN
     RETURN job_row.response_payload;
+  END IF;
+  IF job_row.attempt_number <> p_attempt_number THEN
+    RAISE EXCEPTION 'stale MAI attempt cannot complete the analysis';
   END IF;
   IF p_response->>'request_id' IS DISTINCT FROM p_request_id::text THEN
     RAISE EXCEPTION 'MAI response request_id does not match';
@@ -313,6 +420,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.fail_mai_analysis(
   p_request_id uuid,
+  p_attempt_number integer,
   p_status public.service_job_status,
   p_failure_code text,
   p_failure_message text
@@ -332,17 +440,31 @@ BEGIN
          failure_message = left(p_failure_message, 2000),
          finished_at = now(),
          lease_expires_at = NULL
-   WHERE idempotency_key = p_request_id AND kind = 'mai';
+   WHERE idempotency_key = p_request_id
+     AND kind = 'mai'
+     AND attempt_number = p_attempt_number
+     AND status IN ('dispatching', 'running');
 
   UPDATE public.reading_analyses
      SET status = 'failed', failure_code = p_failure_code, finished_at = now()
-   WHERE analysis_id = p_request_id AND NOT is_selected;
+   WHERE analysis_id = p_request_id AND NOT is_selected
+     AND EXISTS (
+       SELECT 1 FROM public.service_jobs
+        WHERE idempotency_key = p_request_id
+          AND kind = 'mai'
+          AND attempt_number = p_attempt_number
+          AND status = p_status
+     );
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.start_mai_analysis(uuid, text, jsonb, text) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.complete_mai_analysis(uuid, jsonb) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.fail_mai_analysis(uuid, public.service_job_status, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.claim_mai_analysis(uuid, integer, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.release_mai_analysis(uuid, integer, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.complete_mai_analysis(uuid, integer, jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.fail_mai_analysis(uuid, integer, public.service_job_status, text, text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.start_mai_analysis(uuid, text, jsonb, text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.complete_mai_analysis(uuid, jsonb) TO service_role;
-GRANT EXECUTE ON FUNCTION public.fail_mai_analysis(uuid, public.service_job_status, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.claim_mai_analysis(uuid, integer, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.release_mai_analysis(uuid, integer, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.complete_mai_analysis(uuid, integer, jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fail_mai_analysis(uuid, integer, public.service_job_status, text, text) TO service_role;

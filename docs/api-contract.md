@@ -1,11 +1,13 @@
 # API contracts
 
-The backend exposes health, a learner dashboard, and CRUD routes for the
-application tables. These routes use the Supabase service key and are protected
-by a separate backend key; never call them from browser code.
-AI inference remains in external services. ReadRight's synchronous MAI
-integration is documented in [`mai-integration.md`](mai-integration.md); the
-proposed ASR/CV boundaries are in [`ai-service-contracts.md`](ai-service-contracts.md).
+The backend exposes health, a learner dashboard, learner-facing reading and
+comprehension routes, and CRUD routes for the application tables. CRUD routes
+use the Supabase service key and are protected by a separate backend key; never
+call them from browser code.
+AI inference remains in external services. ReadRight queues MAI requests and
+polls for results; the worker calls the MAI service synchronously. This flow is
+documented in [`mai-integration.md`](mai-integration.md); the proposed ASR/CV
+boundaries are in [`ai-service-contracts.md`](ai-service-contracts.md).
 
 ## Implemented routes
 
@@ -68,19 +70,21 @@ to ten latest sessions. It never accepts a learner ID from the browser.
 ```
 
 `reading` is `null` until a selected analysis exists. Average scores include
-completed selected analyses only. Errors: `401` for a missing/invalid token,
-`404` when the authenticated user has no learner profile, and `503` when
-Supabase is unavailable or not configured.
+completed selected analyses only. The first valid Bearer request creates a
+missing learner row from `grade_level` and `display_name` in Supabase user
+metadata. Errors: `401` for a missing/invalid token, `422` when new-account
+metadata has no configured grade, and `503` when Supabase is unavailable.
 
 ### `POST /v1/mai/analyses`
 
-This trusted-backend route accepts the MAI 1.1.0 `AnalysisRequest`, calls the
-configured MAI service synchronously, saves its full result and normalized
-fields, and returns the MAI `AnalysisResponse`. It requires `X-Backend-Key`.
-The request ID must identify an existing video-backed reading analysis, and
-the request passage must match that analysis's session. See the
+This trusted-backend route accepts the MAI 1.1.0 `AnalysisRequest`, places it
+on the SQS work queue, and returns `202` with a `status_url`. The worker calls
+MAI synchronously, saves the response and normalized fields, and the caller
+polls `GET /v1/mai/analyses/{request_id}`. It requires `X-Backend-Key`. The
+request ID must identify an existing video-backed reading analysis, and the
+passage must match that analysis's session. See the
 [MAI integration guide](mai-integration.md) for idempotency, field mapping,
-errors, configuration, and the required Lambda Function URL.
+errors, and configuration.
 
 ### Full-table backend CRUD
 
@@ -123,99 +127,61 @@ summary view is read-only and remains available through `GET /v1/dashboard`.
 Recording CRUD manages database metadata only; media bytes must be uploaded or
 removed through Supabase Storage separately.
 
-## Proposed learner flow
+## Learner-facing reading and comprehension routes
 
-These routes are a starting contract and are not registered in FastAPI.
+These routes use `Authorization: Bearer <Supabase access token>`. The backend
+verifies the token, ensures the learner profile exists, and scopes every query
+to that user ID. The browser never calls the `X-Backend-Key` CRUD routes.
 
-### Assign a passage
+### Assign and upload a passage
 
-`GET /v1/passages?grade_id=4&language_code=en` returns published learner-safe
-passage data. It must omit internal fields and answer keys.
+`POST /v1/me/sessions` accepts `{ "passage_grade_id": 4 }`; the field may be
+omitted to use the learner's current grade. An existing assigned session for
+that passage grade is returned idempotently. Otherwise the backend assigns a
+published passage the learner has not read when one is available. The response
+uses frontend names: `session_id`, then `passage.id`, `passage.title`,
+`passage.text`, and `passage.wordCount`.
 
-`POST /v1/sessions` body:
+`POST /v1/me/sessions/{session_id}/upload-url` accepts the browser's exact
+`content_type`, including codec parameters, and returns `storage_key`, an S3
+presigned POST (`upload.url` and `upload.fields`), and `expires_at`. The signed
+policy allows 1 byte through 150 MiB by default. Upload the `file` field last;
+do not send the Bearer token to S3.
 
-```json
-{ "passage_id": "4ca3f2d0-7f6c-4caf-a45e-1c23a0e42656" }
-```
+`POST /v1/me/sessions/{session_id}/recording` accepts `storage_key`,
+`content_type`, `size_bytes`, and whole `duration_seconds`. The backend checks
+that the object exists and its metadata matches, moves the session to
+`processing`, backdates `session_timestamp` by the reading duration, and sends
+the analysis request with a one-hour presigned GET URL. It returns `202` and
+does not create recording or analysis rows itself.
 
-The backend derives the learner from the token and snapshots grade and policy.
+### Poll and read results
 
-### Request an upload target
+`GET /v1/me/sessions/{session_id}` returns `status`, `analysis_status`, and
+`comprehension_status`. A processing session with no analysis row reports
+`analysis_status: "running"`. The scheduled timeout sweep marks processing
+work older than ten minutes failed only if no completed or partial analysis
+exists.
 
-`POST /v1/sessions/{session_id}/recordings` body:
-
-```json
-{
-  "kind": "video",
-  "file_name": "reading.webm",
-  "content_type": "video/webm",
-  "size_bytes": 18432000,
-  "duration_seconds": 74.2,
-  "sha256": "optional-lowercase-hex-digest"
-}
-```
-
-Example response:
-
-```json
-{
-  "recording_id": "065afbf2-a933-4f52-a5a5-e90f21e21a0a",
-  "upload": {
-    "method": "PUT",
-    "url": "https://storage.example/upload/<short-lived-token>",
-    "headers": { "Content-Type": "video/webm" },
-    "expires_at": "2026-10-31T09:10:00Z"
-  },
-  "max_size_bytes": 157286400
-}
-```
-
-Upload bytes directly to private object storage. The URL is temporary; store
-only the bucket and object path. A video produces a video input for vision and
-an audio derivative for ASR. The backend records the derivative's source link.
-
-### Submit and poll
-
-After upload, `POST /v1/sessions/{session_id}/submit` accepts:
-
-```json
-{ "recording_id": "065afbf2-a933-4f52-a5a5-e90f21e21a0a" }
-```
-
-It should enqueue analysis and return promptly:
-
-```json
-{
-  "session_id": "b4e706a3-f90c-4322-a67a-2d15e8547458",
-  "analysis_id": "9d781d54-70bb-49c4-9cd0-11fd3e230c23",
-  "status": "processing",
-  "status_url": "/v1/sessions/b4e706a3-f90c-4322-a67a-2d15e8547458"
-}
-```
-
-`GET /v1/sessions/{session_id}` returns lifecycle state and service progress.
-`GET /v1/sessions/{session_id}/results` returns selected scores, normalized
-reading events, and behavior observations. The frontend must not call ASR or
-vision services directly or infer completion from a fixed delay.
+`GET /v1/me/sessions/{session_id}/result` returns a flat result with capitalized
+`reading_level`, comprehension level `1`–`3` or `null`, top-level miscue
+counts, `miscue_details` grouped by type, and nullable reading habits. It only
+returns a selected analysis whose status is `completed` or `partial`.
 
 ### Comprehension
 
-`GET /v1/sessions/{session_id}/comprehension` returns questions and choices,
-never `is_correct`. `PUT /v1/comprehension-attempts/{attempt_id}/answers` body:
+`GET /v1/me/sessions/{session_id}/questions` returns questions and ordered
+options, never `is_correct`. `POST /v1/me/sessions/{session_id}/comprehension`
+accepts one answer per question. `choice` is a zero-based option position,
+`"idk"`, or `null`. The backend stores `"idk"` and blank choices as
+`selected_choice_id: null`; both earn zero but remain in `score_possible`.
 
-```json
-{
-  "answers": [
-    {
-      "question_id": "39d62932-0418-4e33-a0dc-11ba6bcfc8a1",
-      "selected_choice_id": "11111111-1111-4111-8111-111111111111"
-    }
-  ]
-}
-```
+The score bands are 80% and above → level 3; 59% to below 80% → level 2; below
+59% → level 1. `SCORING_POLICY_VERSION` defaults to `phil-iri-v1` in runtime
+configuration and SAM parameters and is sent to the analysis service.
 
-The backend validates attempt ownership and choice/question membership, grades
-server-side, and freezes answers after submission.
+The root [`openapi.json`](../openapi.json) is the generated OpenAPI catalogue
+for the registered routes and frontend response models.
 
 ## Client rules
 

@@ -15,6 +15,7 @@ from app.features.comprehension import ComprehensionController
 from app.features.content import ContentController
 from app.features.dashboard import DashboardController
 from app.features.learners import LearnersController
+from app.features.me import MeController
 from app.features.mai.controller import MaiController
 from app.features.reading import ReadingController
 from app.features.service_jobs import ServiceJobsController
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(HealthController().router)
     app.include_router(DashboardController().router)
+    app.include_router(MeController().router)
     app.include_router(LearnersController().router)
     app.include_router(ContentController().router)
     app.include_router(ReadingController().router)

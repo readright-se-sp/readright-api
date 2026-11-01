@@ -27,18 +27,59 @@ class MaiRepository:
         ).execute()
         return _as_object(response.data)
 
+    def claim_analysis(
+        self, request_id: str, attempt_number: int, service_name: str
+    ) -> dict[str, Any]:
+        response = self._client.rpc(
+            "claim_mai_analysis",
+            {
+                "p_request_id": request_id,
+                "p_attempt_number": attempt_number,
+                "p_service_name": service_name,
+            },
+        ).execute()
+        return _as_object(response.data)
+
+    def release_analysis(
+        self, request_id: str, attempt_number: int, retry_after_seconds: int
+    ) -> None:
+        self._client.rpc(
+            "release_mai_analysis",
+            {
+                "p_request_id": request_id,
+                "p_attempt_number": attempt_number,
+                "p_retry_after_seconds": retry_after_seconds,
+            },
+        ).execute()
+
+    def get_status(self, request_id: str) -> dict[str, Any] | None:
+        response = (
+            self._client.table("service_jobs")
+            .select("analysis_id, status, response_payload, failure_code, failure_message")
+            .eq("idempotency_key", request_id)
+            .eq("kind", "mai")
+            .maybe_single()
+            .execute()
+        )
+        return response.data if isinstance(response.data, dict) else None
+
     def complete_analysis(
-        self, request_id: str, response_body: dict[str, Any]
+        self, request_id: str, attempt_number: int, response_body: dict[str, Any]
     ) -> dict[str, Any]:
         response = self._client.rpc(
             "complete_mai_analysis",
-            {"p_request_id": request_id, "p_response": response_body},
+            {
+                "p_request_id": request_id,
+                "p_attempt_number": attempt_number,
+                "p_response": response_body,
+            },
         ).execute()
         return _as_object(response.data)
 
     def fail_analysis(
         self,
         request_id: str,
+        attempt_number: int,
         status: str,
         failure_code: str,
         failure_message: str,
@@ -47,6 +88,7 @@ class MaiRepository:
             "fail_mai_analysis",
             {
                 "p_request_id": request_id,
+                "p_attempt_number": attempt_number,
                 "p_status": status,
                 "p_failure_code": failure_code,
                 "p_failure_message": failure_message,

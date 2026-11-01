@@ -3,8 +3,9 @@ import hashlib
 import json
 import logging
 from typing import Any
+from uuid import UUID
 
-import httpx
+from botocore.exceptions import BotoCoreError
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from supabase import Client
@@ -12,14 +13,21 @@ from supabase import Client
 from app.config import Settings, get_settings
 from app.dependencies.backend_key import require_backend_key
 from app.dependencies.supabase import get_supabase_client
-from app.features.mai.models import AnalysisRequest, AnalysisResponse, ErrorResponse
+from app.features.mai.models import (
+    AnalysisRequest,
+    AnalysisResponse,
+    AnalysisStatus,
+    AnalysisSubmission,
+    ErrorResponse,
+)
+from app.features.mai.queue import enqueue_analysis
 from app.features.mai.repository import MaiRepository
 
 logger = logging.getLogger(__name__)
 
 
 class MaiController:
-    """Runs MAI synchronously and stores its response as one database transaction."""
+    """Accepts MAI work asynchronously and exposes its persisted status."""
 
     def __init__(self) -> None:
         self.router = APIRouter(
@@ -31,24 +39,31 @@ class MaiController:
             "/analyses",
             self.create_analysis,
             methods=["POST"],
-            response_model=AnalysisResponse,
+            status_code=202,
+            response_model=AnalysisResponse | AnalysisSubmission,
             responses={
-                400: {"model": ErrorResponse, "description": "Malformed MAI request."},
-                401: {"model": ErrorResponse, "description": "MAI API key rejected."},
-                409: {"model": ErrorResponse, "description": "Request is already in progress."},
-                415: {"model": ErrorResponse, "description": "Unsupported media."},
-                422: {"model": ErrorResponse, "description": "Recording cannot be analyzed."},
-                429: {"model": ErrorResponse, "description": "MAI capacity limit."},
-                500: {"model": ErrorResponse, "description": "MAI processing failed."},
-                503: {"model": ErrorResponse, "description": "MAI unavailable."},
-                504: {"model": ErrorResponse, "description": "MAI timeout."},
+                200: {"model": AnalysisResponse, "description": "Previously completed result."},
+                202: {"model": AnalysisSubmission, "description": "Accepted for background processing."},
+                400: {"model": ErrorResponse, "description": "Malformed or mismatched request."},
+                503: {"model": ErrorResponse, "description": "Queue or analysis storage unavailable."},
             },
-            summary="Run a synchronous MAI analysis",
+            summary="Submit an MAI analysis",
             description=(
-                "Calls the configured MAI service and atomically persists its result. "
-                "Use the Lambda Function URL for this route; API Gateway HTTP APIs "
-                "cannot keep the connection open for the MAI 120-second SLA."
+                "Queues the MAI request and returns 202. Poll the returned status_url "
+                "for the result. The worker calls MAI synchronously and persists the "
+                "validated result."
             ),
+        )
+        self.router.add_api_route(
+            "/analyses/{request_id}",
+            self.get_analysis_status,
+            methods=["GET"],
+            response_model=AnalysisStatus,
+            responses={
+                404: {"model": ErrorResponse, "description": "Unknown request ID."},
+                503: {"model": ErrorResponse, "description": "Analysis storage unavailable."},
+            },
+            summary="Get MAI analysis status",
         )
 
     async def create_analysis(
@@ -56,10 +71,10 @@ class MaiController:
         payload: AnalysisRequest,
         client: Client = Depends(get_supabase_client),
         settings: Settings = Depends(get_settings),
-    ) -> AnalysisResponse | JSONResponse:
-        if not settings.MAI_API_KEY:
+    ) -> AnalysisResponse | AnalysisSubmission | JSONResponse:
+        if not settings.MAI_QUEUE_URL:
             return _error_response(
-                503, "SERVICE_UNAVAILABLE", "MAI integration is not configured."
+                503, "SERVICE_UNAVAILABLE", "MAI background processing is not configured."
             )
 
         request_id = str(payload.request_id)
@@ -103,123 +118,106 @@ class MaiController:
                 return _error_response(
                     500, "INTERNAL_ERROR", "The stored analysis response is invalid."
                 )
-        if start.get("state") == "in_progress":
-            return _error_response(
-                409,
-                "REQUEST_IN_PROGRESS",
-                "An analysis with this request ID is still in progress.",
-                retry_after="2",
-            )
 
-        endpoint = f"{settings.MAI_BASE_URL.rstrip('/')}/analyses"
-        timeout = httpx.Timeout(
-            connect=settings.MAI_CONNECT_TIMEOUT_SECONDS,
-            read=settings.MAI_READ_TIMEOUT_SECONDS,
-            write=10.0,
-            pool=5.0,
-        )
-        try:
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as http:
-                upstream = await http.post(
-                    endpoint,
-                    json=request_body,
-                    headers={"X-API-Key": settings.MAI_API_KEY},
-                )
-        except httpx.TimeoutException:
-            await _record_failure(
-                repository,
-                request_id,
-                "timed_out",
-                "TIMEOUT",
-                "MAI response exceeded the client timeout.",
-            )
-            return _error_response(
-                504, "TIMEOUT", "MAI did not return within the allowed response window."
-            )
-        except httpx.RequestError:
-            await _record_failure(
-                repository,
-                request_id,
-                "failed",
-                "SERVICE_UNAVAILABLE",
-                "The MAI service could not be reached.",
-            )
-            return _error_response(
-                503, "SERVICE_UNAVAILABLE", "The MAI service is temporarily unavailable."
-            )
-
-        if upstream.status_code == 200:
+        attempt_number = int(start.get("attempt_number", 0))
+        if start.get("state") in {"started", "dispatching"}:
             try:
-                raw_result = upstream.json()
-                result = AnalysisResponse.model_validate(raw_result)
-                if result.request_id != payload.request_id:
-                    raise ValueError("MAI response request_id does not match")
-            except Exception:
-                logger.exception("MAI returned an invalid result for %s", request_id)
+                await asyncio.to_thread(
+                    enqueue_analysis,
+                    settings.MAI_QUEUE_URL,
+                    request_body,
+                    attempt_number,
+                )
+            except BotoCoreError:
+                logger.exception("Could not queue MAI analysis %s", request_id)
                 await _record_failure(
                     repository,
                     request_id,
-                    "failed",
-                    "PROCESSING_FAILED",
-                    "MAI response did not match the configured contract.",
+                    attempt_number,
+                    "SERVICE_UNAVAILABLE",
+                    "MAI request could not be placed on the processing queue.",
                 )
                 return _error_response(
-                    502, "INTERNAL_ERROR", "MAI returned a response that does not match its contract."
-                )
-            try:
-                persisted = await asyncio.to_thread(
-                    repository.complete_analysis,
-                    request_id,
-                    raw_result,
-                )
-                AnalysisResponse.model_validate(persisted)
-                return JSONResponse(status_code=200, content=persisted)
-            except Exception:
-                # The database call may have committed before its response was
-                # interrupted. Leave the job untouched; a retry reads the
-                # idempotently stored response if the commit succeeded.
-                logger.exception("Could not persist MAI result for %s", request_id)
-                return _error_response(
-                    503, "SERVICE_UNAVAILABLE", "The analysis result could not be confirmed in storage."
+                    503, "SERVICE_UNAVAILABLE", "MAI processing could not be queued."
                 )
 
-        try:
-            error = ErrorResponse.model_validate(upstream.json())
-            body = error.model_dump(mode="json", exclude_none=True)
-            code = error.error.code
-        except Exception:
-            code = "SERVICE_UNAVAILABLE" if upstream.status_code == 503 else "INTERNAL_ERROR"
-            body = {
-                "error": {
-                    "code": code,
-                    "message": "MAI returned an invalid error response.",
-                }
-            }
+        if start.get("state") in {"started", "dispatching", "in_progress"}:
+            return _accepted_response(request_id)
 
-        failure_status = "timed_out" if code == "TIMEOUT" else "failed"
-        await _record_failure(
-            repository,
-            request_id,
-            failure_status,
-            code,
-            f"MAI request failed with {code}; response details were not persisted.",
+        logger.error("Unexpected MAI start state for %s", request_id)
+        return _error_response(
+            503, "SERVICE_UNAVAILABLE", "MAI processing could not be started."
         )
-        if upstream.status_code not in {400, 401, 409, 415, 422, 429, 500, 503, 504}:
-            return JSONResponse(
-                status_code=502,
-                content={"error": {"code": "INTERNAL_ERROR", "message": "MAI returned an unexpected HTTP status."}},
-            )
 
-        headers: dict[str, str] = {}
-        retry_after = upstream.headers.get("Retry-After")
-        if retry_after and retry_after.isdigit():
-            headers["Retry-After"] = retry_after
-        return JSONResponse(status_code=upstream.status_code, content=body, headers=headers)
+    async def get_analysis_status(
+        self,
+        request_id: UUID,
+        client: Client = Depends(get_supabase_client),
+    ) -> AnalysisStatus | JSONResponse:
+        try:
+            record = await asyncio.to_thread(
+                MaiRepository(client).get_status, str(request_id)
+            )
+        except Exception:
+            logger.exception("Could not read MAI status for %s", request_id)
+            return _error_response(
+                503, "SERVICE_UNAVAILABLE", "Analysis storage is temporarily unavailable."
+            )
+        if record is None:
+            return _error_response(404, "INVALID_REQUEST", "Unknown MAI request_id.")
+
+        job_status = record.get("status")
+        if job_status in {"pending", "dispatching"}:
+            result: dict[str, Any] = {
+                "request_id": str(request_id),
+                "status": "queued",
+            }
+        elif job_status == "running":
+            result = {"request_id": str(request_id), "status": "running"}
+        elif job_status == "succeeded":
+            stored_response = record.get("response_payload")
+            try:
+                AnalysisResponse.model_validate(stored_response)
+            except Exception:
+                logger.exception("Stored MAI response is invalid for %s", request_id)
+                return _error_response(
+                    500, "INTERNAL_ERROR", "The stored analysis response is invalid."
+                )
+            result = {
+                "request_id": str(request_id),
+                "status": "completed",
+                "result": stored_response,
+            }
+        else:
+            failure_code = record.get("failure_code") or "PROCESSING_FAILED"
+            if failure_code not in {
+                "INVALID_REQUEST",
+                "VIDEO_DOWNLOAD_FAILED",
+                "VIDEO_URL_EXPIRED",
+                "UNSUPPORTED_MEDIA",
+                "NO_SPEECH_DETECTED",
+                "REQUEST_IN_PROGRESS",
+                "RATE_LIMITED",
+                "TIMEOUT",
+                "PROCESSING_FAILED",
+                "UPLOAD_FAILED",
+                "SERVICE_UNAVAILABLE",
+                "INTERNAL_ERROR",
+            }:
+                failure_code = "INTERNAL_ERROR"
+            result = {
+                "request_id": str(request_id),
+                "status": "failed",
+                "error": {
+                    "code": failure_code,
+                    "message": record.get("failure_message") or "MAI analysis failed.",
+                },
+            }
+        return JSONResponse(status_code=200, content=result)
 
 
 def _logical_request_hash(request: dict[str, Any]) -> str:
-    # A presigned URL is a short-lived capability. Exclude it so refreshing the
-    # URL for an idempotent retry does not create a different logical request.
+    # Do not include the short-lived video URL in the durable request hash.
     logical_request = {key: value for key, value in request.items() if key != "video_url"}
     canonical = json.dumps(
         logical_request, ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -230,7 +228,7 @@ def _logical_request_hash(request: dict[str, Any]) -> str:
 async def _record_failure(
     repository: MaiRepository,
     request_id: str,
-    status_value: str,
+    attempt_number: int,
     failure_code: str,
     failure_message: str,
 ) -> None:
@@ -238,7 +236,8 @@ async def _record_failure(
         await asyncio.to_thread(
             repository.fail_analysis,
             request_id,
-            status_value,
+            attempt_number,
+            "failed",
             failure_code,
             failure_message,
         )
@@ -246,17 +245,23 @@ async def _record_failure(
         logger.exception("Could not persist MAI failure for %s", request_id)
 
 
+def _accepted_response(request_id: str) -> JSONResponse:
+    status_url = f"/v1/mai/analyses/{request_id}"
+    return JSONResponse(
+        status_code=202,
+        content={"request_id": request_id, "status": "accepted", "status_url": status_url},
+        headers={"Location": status_url, "Retry-After": "2"},
+    )
+
+
 def _error_response(
     status_code: int,
     code: str,
     message: str,
-    retry_after: str | None = None,
 ) -> JSONResponse:
-    headers = {"Retry-After": retry_after} if retry_after else None
     return JSONResponse(
         status_code=status_code,
         content={"error": {"code": code, "message": message}},
-        headers=headers,
     )
 
 

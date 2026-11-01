@@ -9,8 +9,8 @@ from each feature's `models.py`, which lists writable fields and types:
 - `reading`: sessions, recordings, analyses, reading events, behavior
   observations and phoneme events.
 - `service_jobs`: external-service attempts and result payloads.
-- `mai`: MAI request/response validation, synchronous client and transaction-
-  backed response persistence.
+- `mai`: MAI request/response validation, SQS submission, worker processing,
+  polling, and transaction-backed response persistence.
 - `comprehension`: attempts and answers.
 - `dashboard`: learner-facing dashboard response models.
 
