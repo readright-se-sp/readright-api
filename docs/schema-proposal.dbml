@@ -34,6 +34,9 @@ Enum reading_event_type {
   omission
   insertion
   repetition
+  transposition
+  reversal
+  self_correction
   refusal_to_pronounce
   unassessable
 }
@@ -43,6 +46,8 @@ Enum behavior_type {
   monotone_reading
   word_by_word_reading
   inaudible_reading
+  disregard_punctuation
+  lack_expression
 }
 Enum behavior_outcome {
   detected
@@ -59,6 +64,7 @@ Enum service_kind {
   vision
   prosody
   pronunciation
+  mai
 }
 Enum service_job_status {
   pending
@@ -132,7 +138,7 @@ Table sessions {
   assignment_policy_version text [not null]
   status session_status [not null, default: 'assigned']
   assigned_at timestamptz [not null, default: `now()`]
-  reading_started_at timestamptz
+  session_timestamp timestamptz
   completed_at timestamptz
 
   indexes {
@@ -176,6 +182,7 @@ Table reading_analyses {
   transcript text
   reading_duration_seconds numeric
   wpm numeric
+  reading_score numeric
   word_recognition_pct numeric
   reading_level text
   failure_code text
@@ -187,7 +194,7 @@ Table reading_analyses {
     source_recording_id
   }
 
-  Note: 'Scores are persisted for dashboard summaries. SQL has a partial unique index: at most one selected partial or completed run per session.'
+  Note: 'reading_score is the MAI overall score, separate from word_recognition_pct. SQL has a partial unique index: at most one selected partial or completed run per session.'
 }
 
 Table service_jobs {
@@ -223,7 +230,7 @@ Table service_jobs {
     input_recording_id
   }
 
-  Note: 'Tracks independent ASR, vision, prosody, or pronunciation service attempts. SQL has a partial unique index: one current attempt per analysis and kind. Response JSON is diagnostic; normalized rows are reporting data. Never persist credentials or expiring URLs.'
+  Note: 'Tracks ASR, vision, prosody, pronunciation, or consolidated MAI attempts. SQL has a partial unique index: one current attempt per analysis and kind. MAI response JSON supports idempotent replay; normalized rows are reporting data. Never persist credentials or expiring URLs.'
 }
 
 Table reading_events {
@@ -235,6 +242,13 @@ Table reading_events {
   expected_start_token_id uuid [ref: > passage_tokens.token_id]
   expected_end_token_id uuid [ref: > passage_tokens.token_id]
   heard_text text
+  actual_phrase text
+  spoken_phrase text
+  actual_phonemes text[]
+  spoken_phonemes text[]
+  read_start_ms integer
+  read_end_ms integer
+  audio_object_key text
   audio_start_seconds numeric
   audio_end_seconds numeric
   confidence numeric
@@ -251,7 +265,7 @@ Table reading_events {
     source_service_job_id
   }
 
-  Note: 'Review is an overlay: null means unreviewed; equal to detected_type means confirmed; different means corrected.'
+  Note: 'MAI fields are retained with original phoneme arrays and millisecond offsets; normalized event times remain in seconds. Review is an overlay: null means unreviewed; equal to detected_type means confirmed; different means corrected.'
 }
 
 Table behavior_observations {

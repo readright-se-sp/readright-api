@@ -1,8 +1,8 @@
-# AI service contracts (proposal)
+# AI service contracts
 
-ASR and MediaPipe CV are separate private services. These versioned payloads
-propose their integration contract; this backend has no clients or local
-inference implementations. See
+The consolidated MAI 1.1.0 synchronous integration is implemented; see
+[`mai-integration.md`](mai-integration.md). The ASR and MediaPipe CV sections
+below remain proposals for separate private services. See
 [architecture](../ARCHITECTURE.md).
 
 ## Boundary and ownership

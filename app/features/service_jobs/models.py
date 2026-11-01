@@ -13,7 +13,7 @@ SERVICE_JOBS = ResourceDefinition(
         "session_id": UUID,
         "analysis_id": UUID,
         "input_recording_id": UUID,
-        "kind": Literal["asr", "vision", "prosody", "pronunciation"],
+        "kind": Literal["asr", "vision", "prosody", "pronunciation", "mai"],
         "service_name": str,
         "attempt_number": int,
         "is_current": bool,

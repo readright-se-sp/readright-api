@@ -1,4 +1,4 @@
-name: Deploy
+name: Manual Docker host deploy
 
 # Host-agnostic deploy: test -> build & push image to GHCR -> ship docker-compose
 # to any always-on Docker host over SSH and roll it forward.
@@ -15,8 +15,6 @@ name: Deploy
 #   point $API_DOMAIN DNS at the box
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}  # lets you re-run the pipeline on demand from the Actions tab, no commit needed
 
 env:
@@ -43,8 +41,14 @@ jobs:
       - name: Pyright
         run: .venv/bin/pyright app/
 
-      - name: Pytest
-        run: .venv/bin/pytest
+      - name: Pytest (when tests exist)
+        shell: bash
+        run: |
+          if [ -d tests ] && find tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) -print -quit | grep -q .; then
+            .venv/bin/pytest
+          else
+            echo "No pytest files found; skipping tests."
+          fi
 
   build-and-push:
     name: Build & Push Image

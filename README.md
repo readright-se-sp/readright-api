@@ -1,9 +1,9 @@
 # ReadRight backend
 
-FastAPI backend for ReadRight. Local ASR, MediaPipe CV, prosody analysis, and
-the synchronous `/analyze` pipeline have been removed. AI inference remains
-outside this API. It provides health, a learner dashboard, and full-table CRUD
-routes for trusted backend callers.
+FastAPI backend for ReadRight. AI inference runs in external services. The
+backend calls the consolidated MAI 1.1.0 service synchronously, persists the
+result to Supabase, and provides health, learner dashboard, and trusted-backend
+CRUD routes.
 
 ## Docs
 
@@ -11,11 +11,14 @@ routes for trusted backend callers.
 - [Models](docs/models.md)
 - [Database design and migrations](docs/database-proposal.md)
 - [AI service payloads](docs/ai-service-contracts.md)
+- [MAI synchronous integration](docs/mai-integration.md)
+- [AWS Lambda deployment with SAM](docs/lambda-deployment.md)
 
 ## Run locally
 
 Requires Python 3.12. Configure Supabase and `BACKEND_API_KEY` for CRUD routes.
-Never expose the service key or backend key to browser code.
+Set `MAI_BASE_URL` and `MAI_API_KEY` to enable the MAI route. Never expose
+service keys or backend keys to browser code.
 
 ```bash
 python3.12 -m venv .venv

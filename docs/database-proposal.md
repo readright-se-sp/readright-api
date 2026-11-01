@@ -4,17 +4,23 @@
 [`supabase/migrations/20261031000100_initial_readright_schema.sql`](../supabase/migrations/20261031000100_initial_readright_schema.sql)
 creates the initial schema, including sessions, media lineage, service jobs,
 normalized reading evidence, comprehension, and the dashboard summary view.
+[`supabase/migrations/20261101070019_add_mai_analysis_support.sql`](../supabase/migrations/20261101070019_add_mai_analysis_support.sql)
+adds the MAI job kind, response fields and transaction-backed start,
+completion, and failure functions.
 API code is grouped by feature, with shared CRUD mechanics under
 `app/features/shared`.
 
 ## Decisions in this revision
 
-- A session has `assigned_at` and optional `reading_started_at`; assignment is
+- A session has `assigned_at` and optional `session_timestamp`; assignment is
   not counted as a reading start.
 - A recording can reference its source recording. Video and extracted audio
   remain separate objects so vision and ASR can receive the appropriate media.
 - A selected analysis stores WPM, word recognition, and reading level for
   dashboard queries. The dashboard view averages completed selected analyses.
+- MAI `reading_score` is stored separately from word recognition. Its range is
+  unconstrained until MAI finalizes the scale. Miscue rows retain the exact
+  phoneme arrays and millisecond offsets, alongside normalized event times.
 - `service_jobs` tracks independent ASR, vision, prosody, and pronunciation
   attempts. The application owns dispatch, validation, normalized results, and
   user-facing status; the model services remain replaceable.
@@ -32,7 +38,8 @@ an `analysis_id` foreign key; a job ID must not reference its own analysis ID.
 Install the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started),
 then run `supabase start` and `supabase db reset` to apply migrations to a local
 stack. Remote deployment is separate: link the intended project, review
-`supabase db push --dry-run`, then run `supabase db push` when ready.
+`supabase db push --dry-run`, then run `supabase db push` after reviewing the
+MAI migration and confirming the target project.
 
 The current Supabase link targets the fresh project. On 2026-10-31, the linked
 migration history confirmed `20261031000100` applied there. Before production,

@@ -5,6 +5,8 @@ pydantic
 pydantic-settings
 python-dotenv
 supabase
+mangum
+httpx
 
 # Development
 pytest

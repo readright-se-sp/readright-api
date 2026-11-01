@@ -3,8 +3,11 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.dependencies.supabase import init_supabase_client
@@ -12,6 +15,7 @@ from app.features.comprehension import ComprehensionController
 from app.features.content import ContentController
 from app.features.dashboard import DashboardController
 from app.features.learners import LearnersController
+from app.features.mai.controller import MaiController
 from app.features.reading import ReadingController
 from app.features.service_jobs import ServiceJobsController
 from app.routers.health import HealthController
@@ -34,6 +38,23 @@ def create_app() -> FastAPI:
 
     settings = get_settings()
     app = FastAPI(title="ReadRight Backend API", lifespan=lifespan)
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        if request.url.path == "/v1/mai/analyses":
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": {
+                        "code": "INVALID_REQUEST",
+                        "message": "Request body does not match the MAI analysis contract.",
+                    }
+                },
+            )
+        return await request_validation_exception_handler(request, exc)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.ALLOWED_ORIGINS,
@@ -46,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(LearnersController().router)
     app.include_router(ContentController().router)
     app.include_router(ReadingController().router)
+    app.include_router(MaiController().router)
     app.include_router(ServiceJobsController().router)
     app.include_router(ComprehensionController().router)
     return app
