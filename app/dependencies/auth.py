@@ -90,7 +90,9 @@ def _load_learner(client: Client, user_id: str) -> dict[str, Any] | None:
         .maybe_single()
         .execute()
     )
-    return response.data if isinstance(response.data, dict) else None
+    if response is None or not isinstance(response.data, dict):
+        return None
+    return response.data
 
 
 def _create_learner_from_metadata(
@@ -111,7 +113,7 @@ def _create_learner_from_metadata(
         .maybe_single()
         .execute()
     )
-    if not isinstance(grade_response.data, dict):
+    if grade_response is None or not isinstance(grade_response.data, dict):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Learner grade is not configured",
