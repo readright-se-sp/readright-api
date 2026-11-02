@@ -22,6 +22,34 @@ class MeRepository:
         ).execute()
         return _as_object(response.data)
 
+    def prepare_mai_reading_run(
+        self,
+        learner_id: str,
+        session_id: str,
+        storage_bucket: str,
+        storage_path: str,
+        content_type: str,
+        size_bytes: int,
+        duration_seconds: int,
+        pipeline_version: str,
+        scoring_policy_version: str,
+    ) -> dict[str, Any] | None:
+        response = self._client.rpc(
+            "prepare_mai_reading_run",
+            {
+                "p_learner_id": learner_id,
+                "p_session_id": session_id,
+                "p_storage_bucket": storage_bucket,
+                "p_storage_path": storage_path,
+                "p_content_type": content_type,
+                "p_size_bytes": size_bytes,
+                "p_duration_seconds": duration_seconds,
+                "p_pipeline_version": pipeline_version,
+                "p_scoring_policy_version": scoring_policy_version,
+            },
+        ).execute()
+        return _as_object(response.data)
+
     def get_learner(self, learner_id: str) -> dict[str, Any] | None:
         response = (
             self._client.table("learners")
@@ -30,7 +58,7 @@ class MeRepository:
             .maybe_single()
             .execute()
         )
-        return _as_object(response.data)
+        return _as_optional_object(response)
 
     def count_passage_tokens(self, passage_id: str) -> int:
         response = (
@@ -56,7 +84,7 @@ class MeRepository:
             .maybe_single()
             .execute()
         )
-        return _as_object(response.data)
+        return _as_optional_object(response)
 
     def get_passage(self, passage_id: str) -> dict[str, Any] | None:
         response = (
@@ -66,7 +94,7 @@ class MeRepository:
             .maybe_single()
             .execute()
         )
-        return _as_object(response.data)
+        return _as_optional_object(response)
 
     def list_questions(self, passage_id: str) -> list[dict[str, Any]]:
         response = (
@@ -153,14 +181,14 @@ class MeRepository:
             .maybe_single()
             .execute()
         )
-        return _as_object(response.data)
+        return _as_optional_object(response)
 
     def list_reading_events(self, analysis_id: str) -> list[dict[str, Any]]:
         response = (
             self._client.table("reading_events")
             .select(
                 "event_id,event_order,detected_type,reviewed_type,"
-                "expected_start_token_id,expected_end_token_id,heard_text"
+                "expected_start_token_id,expected_end_token_id,heard_text,actual_phrase"
             )
             .eq("analysis_id", analysis_id)
             .order("event_order")
@@ -211,6 +239,12 @@ def _as_object(value: Any) -> dict[str, Any] | None:
     if isinstance(value, list) and value and isinstance(value[0], dict):
         return cast(dict[str, Any], value[0])
     return None
+
+
+def _as_optional_object(response: Any) -> dict[str, Any] | None:
+    if response is None:
+        return None
+    return _as_object(getattr(response, "data", None))
 
 
 def _as_rows(value: Any) -> list[dict[str, Any]]:

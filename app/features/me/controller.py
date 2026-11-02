@@ -21,6 +21,7 @@ from app.features.me.models import (
     UploadUrlResponse,
 )
 from app.features.me.repository import MeRepository
+from app.features.mai.repository import MaiRepository
 from app.features.me.service import (
     AnalysisServiceUnavailable,
     AttemptAlreadySubmitted,
@@ -43,7 +44,7 @@ def get_me_service(
     client: Client = Depends(get_supabase_client),
     settings: Settings = Depends(get_settings),
 ) -> MeService:
-    return MeService(MeRepository(client), settings)
+    return MeService(MeRepository(client), settings, MaiRepository(client))
 
 
 class MeController:

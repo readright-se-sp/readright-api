@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal
 
 from app.features.dashboard.models import (
     DashboardLearner,
@@ -7,6 +8,8 @@ from app.features.dashboard.models import (
     LearnerDashboard,
 )
 from app.features.dashboard.repository import DashboardRepository
+from app.features.shared.reading import build_miscue_details
+from app.features.shared.scoring import comprehension_level
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +62,9 @@ class DashboardService:
                 continue
 
             analysis = snapshot.analyses.get(str(session["session_id"]))
+            if analysis is None or analysis["status"] not in {"completed", "partial"}:
+                continue
+
             scores: dict[str, Any] = {
                 "wpm": None,
                 "word_recognition_pct": None,
@@ -71,35 +77,52 @@ class DashboardService:
                 DASHBOARD_BEHAVIOR_TYPES, None
             )
 
-            if analysis is not None:
-                scores.update(
-                    wpm=analysis["wpm"],
-                    word_recognition_pct=analysis["word_recognition_pct"],
-                    reading_level=analysis["reading_level"],
+            scores.update(
+                wpm=analysis["wpm"],
+                word_recognition_pct=analysis["word_recognition_pct"],
+                reading_level=_capitalized_level(analysis["reading_level"]),
+            )
+            analysis_id = str(analysis["analysis_id"])
+            events = snapshot.events.get(analysis_id, [])
+            for observation in snapshot.observations.get(analysis_id, []):
+                behavior_type = observation.get("type")
+                if behavior_type not in behaviors:
+                    continue
+                outcome = observation.get("outcome")
+                behaviors[behavior_type] = (
+                    True
+                    if outcome == "detected"
+                    else False
+                    if outcome == "not_detected"
+                    else None
                 )
-                analysis_id = str(analysis["analysis_id"])
-                for observation in snapshot.observations.get(analysis_id, []):
-                    behavior_type = observation.get("type")
-                    if behavior_type not in behaviors:
-                        continue
-                    outcome = observation.get("outcome")
-                    behaviors[behavior_type] = (
-                        True
-                        if outcome == "detected"
-                        else False
-                        if outcome == "not_detected"
-                        else None
-                    )
 
-                if analysis["status"] in {"completed", "partial"}:
-                    counts = dict.fromkeys(DASHBOARD_MISCUE_TYPES, 0)
-                    for event in snapshot.events.get(analysis_id, []):
-                        event_type = event.get("reviewed_type") or event.get(
-                            "detected_type"
-                        )
-                        if event_type in counts:
-                            counts[event_type] += 1
-                    miscues = counts
+            counts = dict.fromkeys(DASHBOARD_MISCUE_TYPES, 0)
+            for event in events:
+                event_type = event.get("reviewed_type") or event.get(
+                    "detected_type"
+                )
+                if event_type in counts:
+                    counts[event_type] += 1
+            miscues = counts
+
+            attempt = snapshot.attempts.get(str(session["session_id"]))
+            level = None
+            if (
+                attempt is not None
+                and attempt.get("status") == "submitted"
+                and attempt.get("score_earned") is not None
+                and attempt.get("score_possible") is not None
+            ):
+                level = comprehension_level(
+                    Decimal(str(attempt["score_earned"])),
+                    Decimal(str(attempt["score_possible"])),
+                )
+            detail_items = build_miscue_details(
+                events,
+                str(passage["content"]),
+                snapshot.tokens.get(str(session["passage_id"]), []),
+            )
 
             sessions.append(
                 DashboardSession(
@@ -107,9 +130,13 @@ class DashboardService:
                     status=session["status"],
                     assigned_at=session["assigned_at"],
                     completed_at=session["completed_at"],
+                    session_timestamp=session["completed_at"] or session["assigned_at"],
                     passage_id=passage["passage_id"],
                     passage_title=passage["title"],
+                    passage_grade=passage["difficulty_grade_id"],
                     language_code=passage["language_code"],
+                    comprehension_level=level,
+                    miscue_details=detail_items,
                     **scores,
                     **miscues,
                     **behaviors,
@@ -135,3 +162,9 @@ class DashboardService:
             ),
             sessions=sessions,
         )
+
+
+def _capitalized_level(value: Any) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return value[:1].upper() + value[1:].lower()

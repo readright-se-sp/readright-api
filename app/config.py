@@ -25,8 +25,6 @@ class Settings(BaseSettings):
 
     MEDIA_BUCKET_NAME: str = ""
     MEDIA_BUCKET_REGION: str = "ap-southeast-1"
-    AI_ANALYSIS_URL: str = ""
-    AI_ANALYSIS_TIMEOUT_SECONDS: float = 10.0
     PIPELINE_VERSION: str = "readright-v1"
     SCORING_POLICY_VERSION: str = "phil-iri-v1"
     ASSIGNMENT_POLICY_VERSION: str = "passage-assignment-v1"

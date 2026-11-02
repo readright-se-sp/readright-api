@@ -33,7 +33,9 @@ class SupabaseCrudRepository:
             .maybe_single()
             .execute()
         )
-        return response.data if isinstance(response.data, dict) else None
+        if response is None or not isinstance(response.data, dict):
+            return None
+        return response.data
 
     def create(
         self, resource: ResourceDefinition, values: dict[str, Any]
@@ -61,7 +63,9 @@ class SupabaseCrudRepository:
             .maybe_single()
             .execute()
         )
-        return response.data if isinstance(response.data, dict) else None
+        if response is None or not isinstance(response.data, dict):
+            return None
+        return response.data
 
     def delete(self, resource: ResourceDefinition, record_id: str) -> bool:
         existing = (
@@ -71,7 +75,7 @@ class SupabaseCrudRepository:
             .maybe_single()
             .execute()
         )
-        if not isinstance(existing.data, dict):
+        if existing is None or not isinstance(existing.data, dict):
             return False
         self._client.table(resource.table).delete().eq(
             resource.primary_key, record_id

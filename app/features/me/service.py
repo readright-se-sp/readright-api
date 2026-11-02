@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import uuid
@@ -5,12 +6,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-import httpx
-
 from app.config import Settings
+from app.features.mai.client import MaiServiceFailure
+from app.features.mai.repository import MaiRepository
+from app.features.mai.workflow import MaiAnalysisInProgress, run_inline_analysis
 from app.features.me.models import (
     ComprehensionSubmissionResponse,
-    MiscueDetail,
     QuestionResponse,
     RecordingResponse,
     SessionResultResponse,
@@ -24,6 +25,8 @@ from app.features.me.storage import (
     make_download_url,
     make_upload_post,
 )
+from app.features.shared.reading import build_miscue_details
+from app.features.shared.scoring import comprehension_level
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +97,15 @@ class ResultNotReady(Exception):
 class MeService:
     """Implements Bearer-authenticated learner session workflows."""
 
-    def __init__(self, repository: MeRepository, settings: Settings) -> None:
+    def __init__(
+        self,
+        repository: MeRepository,
+        settings: Settings,
+        mai_repository: MaiRepository | None = None,
+    ) -> None:
         self._repository = repository
         self._settings = settings
+        self._mai_repository = mai_repository
 
     def start_session(
         self, learner_id: str, requested_grade_id: int | None
@@ -177,59 +186,47 @@ class MeService:
         if object_metadata["content_type"] != content_type:
             raise UnsupportedRecording
 
-        passage = self._repository.get_passage(str(session["passage_id"]))
-        if passage is None:
-            raise PassageNotFound
-        if not self._settings.AI_ANALYSIS_URL or not self._settings.BACKEND_API_KEY:
+        if not self._settings.MAI_API_KEY or self._mai_repository is None:
             raise AnalysisServiceUnavailable
 
         media_url = make_download_url(storage_key)
-        now = datetime.now(UTC)
-        self._repository.update_session(
+        prepared = await asyncio.to_thread(
+            self._repository.prepare_mai_reading_run,
             learner_id,
             session_id,
-            {
-                "status": "processing",
-                "session_timestamp": now - timedelta(seconds=duration_seconds),
-                "processing_started_at": now,
-            },
+            self._settings.MEDIA_BUCKET_NAME,
+            storage_key,
+            content_type,
+            size_bytes,
+            duration_seconds,
+            self._settings.PIPELINE_VERSION,
+            self._settings.SCORING_POLICY_VERSION,
         )
-        payload = {
-            "session_id": session_id,
-            "passage_id": str(session["passage_id"]),
-            "storage_bucket": self._settings.MEDIA_BUCKET_NAME,
-            "storage_key": storage_key,
-            "content_type": content_type,
-            "size_bytes": size_bytes,
-            "duration_seconds": duration_seconds,
-            "media_url": media_url,
-            "pipeline_version": self._settings.PIPELINE_VERSION,
-            "scoring_policy_version": self._settings.SCORING_POLICY_VERSION,
+        if prepared is None:
+            raise PassageNotFound
+
+        request_id = str(prepared["analysis_id"])
+        request_body = {
+            "request_id": request_id,
+            "video_url": media_url,
+            "passage_title": prepared["passage_title"],
+            "passage_content": prepared["passage_content"],
+            "output_key_prefix": f"analyses/{request_id}/",
         }
 
         try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(self._settings.AI_ANALYSIS_TIMEOUT_SECONDS),
-                follow_redirects=False,
-            ) as http:
-                response = await http.post(
-                    _analysis_endpoint(self._settings.AI_ANALYSIS_URL),
-                    json=payload,
-                    headers={"X-Backend-Key": self._settings.BACKEND_API_KEY},
-                )
-        except httpx.RequestError as exc:
-            self._reset_session_for_retry(learner_id, session_id)
-            logger.warning("Analysis service was unreachable for session %s", session_id)
+            await run_inline_analysis(
+                request_body, self._mai_repository, self._settings
+            )
+        except MaiAnalysisInProgress:
+            return RecordingResponse(session_id=session_id, status="processing")
+        except MaiServiceFailure as exc:
+            logger.warning("MAI analysis failed for session %s: %s", session_id, exc.code)
             raise AnalysisServiceUnavailable from exc
 
-        if response.status_code != 202:
-            self._reset_session_for_retry(learner_id, session_id)
-            logger.warning(
-                "Analysis service rejected session %s with status %s",
-                session_id,
-                response.status_code,
-            )
-            raise AnalysisServiceUnavailable
+        self._repository.update_session(
+            learner_id, session_id, {"status": "comprehension"}
+        )
 
         return RecordingResponse(session_id=session_id, status="processing")
 
@@ -259,18 +256,20 @@ class MeService:
                 learner_id, session_id, {"status": "failed"}
             )
             session["status"] = "failed"
-        elif (
-            analysis_status in {"completed", "partial"}
-            and attempt is not None
-            and attempt["status"] == "submitted"
-            and session["status"] != "completed"
-        ):
-            self._repository.update_session(
-                learner_id,
-                session_id,
-                {"status": "completed", "completed_at": datetime.now(UTC)},
-            )
-            session["status"] = "completed"
+        elif analysis_status in {"completed", "partial"}:
+            if attempt is not None and attempt["status"] == "submitted":
+                if session["status"] != "completed":
+                    self._repository.update_session(
+                        learner_id,
+                        session_id,
+                        {"status": "completed", "completed_at": datetime.now(UTC)},
+                    )
+                    session["status"] = "completed"
+            elif session["status"] != "comprehension":
+                self._repository.update_session(
+                    learner_id, session_id, {"status": "comprehension"}
+                )
+                session["status"] = "comprehension"
 
         return SessionStatusResponse(
             session_id=session_id,
@@ -378,34 +377,13 @@ class MeService:
         analysis_id = str(analysis["analysis_id"])
         events = self._repository.list_reading_events(analysis_id)
         tokens = self._repository.list_passage_tokens(str(session["passage_id"]))
-        token_positions = {
-            str(token["token_id"]): int(token["position"]) for token in tokens
-        }
-        tokens_by_position = {
-            int(token["position"]): str(token["token_text"]) for token in tokens
-        }
-
         counts = {event_type: 0 for event_type in ("correct", *MISCUE_TYPES)}
-        details: dict[str, list[MiscueDetail]] = {}
         for event in events:
             event_type = event.get("reviewed_type") or event.get("detected_type")
             if event_type not in counts:
                 continue
             counts[event_type] += 1
-            if event_type == "correct":
-                continue
-            start = token_positions.get(str(event.get("expected_start_token_id")))
-            end = token_positions.get(str(event.get("expected_end_token_id")))
-            expected = ""
-            if start is not None and end is not None and end >= start:
-                expected = " ".join(
-                    tokens_by_position[position]
-                    for position in range(start, end + 1)
-                    if position in tokens_by_position
-                )
-            details.setdefault(event_type, []).append(
-                MiscueDetail(said=event.get("heard_text"), expected=expected)
-            )
+        details = build_miscue_details(events, passage["content"], tokens)
 
         observations = self._repository.list_behavior_observations(analysis_id)
         behavior_values: dict[str, bool | None] = {
@@ -425,12 +403,13 @@ class MeService:
             )
 
         attempt = self._repository.get_latest_attempt(session_id)
-        comprehension_level: int | None = None
         if attempt is not None and attempt.get("status") == "submitted":
-            comprehension_level = _comprehension_level(
+            level = _comprehension_level(
                 Decimal(str(attempt["score_earned"])),
                 Decimal(str(attempt["score_possible"])),
             )
+        else:
+            level = None
 
         return SessionResultResponse(
             session_id=session_id,
@@ -438,7 +417,7 @@ class MeService:
             wpm=_optional_float(analysis.get("wpm")),
             word_recognition_pct=_optional_float(analysis.get("word_recognition_pct")),
             reading_level=_capitalized_level(analysis.get("reading_level")),
-            comprehension_level=comprehension_level,
+            comprehension_level=level,
             correct=counts["correct"],
             mispronunciation=counts["mispronunciation"],
             substitution=counts["substitution"],
@@ -460,32 +439,8 @@ class MeService:
             raise SessionNotFound
         return session
 
-    def _reset_session_for_retry(self, learner_id: str, session_id: str) -> None:
-        self._repository.update_session(
-            learner_id,
-            session_id,
-            {
-                "status": "assigned",
-                "session_timestamp": None,
-                "processing_started_at": None,
-            },
-        )
-
-
-def _analysis_endpoint(value: str) -> str:
-    endpoint = value.rstrip("/")
-    return endpoint if endpoint.endswith("/analyze") else f"{endpoint}/analyze"
-
-
 def _comprehension_level(earned: Decimal, possible: Decimal) -> int:
-    if possible <= 0:
-        return 1
-    percentage = earned * Decimal("100") / possible
-    if percentage >= Decimal("80"):
-        return 3
-    if percentage >= Decimal("59"):
-        return 2
-    return 1
+    return comprehension_level(earned, possible)
 
 
 def _capitalized_level(value: Any) -> str | None:

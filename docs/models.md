@@ -4,7 +4,7 @@ The relational schema is defined by the SQL migration and mirrored in
 [`schema-proposal.dbml`](schema-proposal.dbml). CRUD request models are generated
 from each feature's `models.py`, which lists writable fields and types:
 
-- `learners`: grade levels and learner profiles.
+- `learners`: grade levels and learner profiles, including nullable age (5–18).
 - `content`: passages, passage tokens, comprehension questions and choices.
 - `reading`: sessions, recordings, analyses, reading events, behavior
   observations and phoneme events.

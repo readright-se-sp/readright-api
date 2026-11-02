@@ -98,6 +98,7 @@ Table learners {
   user_id uuid [pk, ref: - auth.users.id]
   current_grade_id smallint [not null, ref: > grade_levels.grade_id]
   display_name text
+  age integer [note: 'Nullable; if set, between 5 and 18.']
   created_at timestamptz [not null, default: `now()`]
 }
 

@@ -1,7 +1,10 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.features.shared.models import MiscueDetail
 
 
 class DashboardLearner(BaseModel):
@@ -24,9 +27,13 @@ class DashboardSession(BaseModel):
     status: str
     assigned_at: datetime
     completed_at: datetime | None
+    session_timestamp: datetime
     passage_id: UUID
     passage_title: str
+    passage_grade: int
     language_code: str
+    comprehension_level: Literal[1, 2, 3] | None
+    miscue_details: dict[str, list[MiscueDetail]]
     wpm: float | None
     word_recognition_pct: float | None
     reading_level: str | None

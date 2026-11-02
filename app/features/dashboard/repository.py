@@ -9,7 +9,9 @@ class DashboardSnapshot:
     summary: dict[str, Any]
     sessions: list[dict[str, Any]]
     passages: dict[str, dict[str, Any]]
+    tokens: dict[str, list[dict[str, Any]]]
     analyses: dict[str, dict[str, Any]]
+    attempts: dict[str, dict[str, Any]]
     events: dict[str, list[dict[str, Any]]]
     observations: dict[str, list[dict[str, Any]]]
 
@@ -45,7 +47,7 @@ class DashboardRepository:
             )
         )
         if not sessions:
-            return DashboardSnapshot(summary_response.data, [], {}, {}, {}, {})
+            return DashboardSnapshot(summary_response.data, [], {}, {}, {}, {}, {}, {})
 
         session_ids = [str(row["session_id"]) for row in sessions]
         passage_ids = list({str(row["passage_id"]) for row in sessions})
@@ -55,7 +57,9 @@ class DashboardRepository:
             rows = _fetch_all(
                 lambda: (
                     self._client.table("passages")
-                    .select("passage_id,title,language_code")
+                    .select(
+                        "passage_id,title,language_code,content,difficulty_grade_id"
+                    )
                     .in_("passage_id", passage_id_chunk)
                 )
             )
@@ -78,13 +82,54 @@ class DashboardRepository:
         analyses_by_session = {str(row["session_id"]): row for row in analyses}
         analysis_ids = [str(row["analysis_id"]) for row in analyses]
 
+        tokens_by_passage: dict[str, list[dict[str, Any]]] = {}
+        for passage_id_chunk in _chunks(passage_ids):
+            rows = _fetch_all(
+                lambda: (
+                    self._client.table("passage_tokens")
+                    .select("passage_id,token_id,position,token_text")
+                    .in_("passage_id", passage_id_chunk)
+                    .order("passage_id", desc=False)
+                    .order("position", desc=False)
+                )
+            )
+            for passage_id, passage_rows in _group_by_passage(rows).items():
+                tokens_by_passage.setdefault(passage_id, []).extend(passage_rows)
+
+        attempts: list[dict[str, Any]] = []
+        for session_id_chunk in _chunks(session_ids):
+            attempts.extend(
+                _fetch_all(
+                    lambda: (
+                        self._client.table("comprehension_attempts")
+                        .select(
+                            "session_id,attempt_number,status,score_earned,score_possible"
+                        )
+                        .in_("session_id", session_id_chunk)
+                        .order("session_id", desc=False)
+                        .order("attempt_number", desc=True)
+                    )
+                )
+            )
+        attempts_by_session: dict[str, dict[str, Any]] = {}
+        for attempt in attempts:
+            session_id = str(attempt["session_id"])
+            current = attempts_by_session.get(session_id)
+            if current is None or int(attempt["attempt_number"]) > int(
+                current["attempt_number"]
+            ):
+                attempts_by_session[session_id] = attempt
+
         events_by_analysis: dict[str, list[dict[str, Any]]] = {}
         observations_by_analysis: dict[str, list[dict[str, Any]]] = {}
         for analysis_id_chunk in _chunks(analysis_ids):
             events = _fetch_all(
                 lambda: (
                     self._client.table("reading_events")
-                    .select("analysis_id,detected_type,reviewed_type")
+                    .select(
+                        "analysis_id,event_order,detected_type,reviewed_type,"
+                        "expected_start_token_id,expected_end_token_id,heard_text,actual_phrase"
+                    )
                     .in_("analysis_id", analysis_id_chunk)
                     .order("analysis_id", desc=False)
                     .order("event_order", desc=False)
@@ -107,7 +152,9 @@ class DashboardRepository:
             summary_response.data,
             sessions,
             passages,
+            tokens_by_passage,
             analyses_by_session,
+            attempts_by_session,
             events_by_analysis,
             observations_by_analysis,
         )
@@ -136,6 +183,15 @@ def _group_by_analysis(
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         grouped.setdefault(str(row["analysis_id"]), []).append(row)
+    return grouped
+
+
+def _group_by_passage(
+    rows: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["passage_id"]), []).append(row)
     return grouped
 
 

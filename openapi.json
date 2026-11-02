@@ -11,7 +11,7 @@
           "health"
         ],
         "summary": "Health",
-        "description": "Returns {\"status\": \"ok\"} \u2014 used by Docker HEALTHCHECK and Nginx upstream checks.",
+        "description": "Returns {\"status\": \"ok\"} — used by Docker HEALTHCHECK and Nginx upstream checks.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
@@ -6038,6 +6038,11 @@
             ],
             "title": "Completed At"
           },
+          "session_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Session Timestamp"
+          },
           "passage_id": {
             "type": "string",
             "format": "uuid",
@@ -6047,9 +6052,39 @@
             "type": "string",
             "title": "Passage Title"
           },
+          "passage_grade": {
+            "type": "integer",
+            "title": "Passage Grade"
+          },
           "language_code": {
             "type": "string",
             "title": "Language Code"
+          },
+          "comprehension_level": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2,
+                  3
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comprehension Level"
+          },
+          "miscue_details": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/MiscueDetail"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Miscue Details"
           },
           "wpm": {
             "anyOf": [
@@ -6223,9 +6258,13 @@
           "status",
           "assigned_at",
           "completed_at",
+          "session_timestamp",
           "passage_id",
           "passage_title",
+          "passage_grade",
           "language_code",
+          "comprehension_level",
+          "miscue_details",
           "wpm",
           "word_recognition_pct",
           "reading_level",
@@ -6422,6 +6461,17 @@
               }
             ],
             "title": "Display Name"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
           }
         },
         "additionalProperties": false,
@@ -6472,6 +6522,17 @@
               }
             ],
             "title": "Display Name"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
           }
         },
         "additionalProperties": false,

@@ -6,6 +6,12 @@ MAI 1.1.0 request body, creates or claims its `service_jobs` row, calls
 result to Supabase before returning it. Processing is synchronous; no queue or
 separate worker is involved.
 
+The learner-facing recording route uses the same MAI client and persistence
+workflow directly. It creates the video recording and unselected analysis row,
+then submits that analysis ID as `request_id`; successful completion selects
+the result for `/result` and the learner dashboard. No intermediate AI service
+URL is configured.
+
 ## Request preconditions
 
 - Send `X-Backend-Key` to authenticate the caller to ReadRight. The server-side

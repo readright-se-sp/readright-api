@@ -13,6 +13,12 @@ class CrudPage(BaseModel):
     total: int | None = None
 
 
+class MiscueDetail(BaseModel):
+    said: str | None
+    expected: str
+    sentence: str | None = None
+
+
 @dataclass(frozen=True)
 class ResourceDefinition:
     """Database resource metadata and its generated request models."""

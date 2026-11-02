@@ -23,10 +23,11 @@ LEARNERS = ResourceDefinition(
         "user_id": UUID,
         "current_grade_id": int,
         "display_name": str | None,
+        "age": int | None,
     },
-    create_fields=("user_id", "current_grade_id", "display_name"),
+    create_fields=("user_id", "current_grade_id", "display_name", "age"),
     required_create_fields=("user_id", "current_grade_id"),
-    update_fields=("current_grade_id", "display_name"),
+    update_fields=("current_grade_id", "display_name", "age"),
 )
 
 RESOURCES = (("/grade-levels", GRADE_LEVELS), ("/learners", LEARNERS))

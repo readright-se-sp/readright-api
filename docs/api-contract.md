@@ -53,12 +53,24 @@ learner ID from the browser.
       "status": "completed",
       "assigned_at": "2026-10-31T09:00:00Z",
       "completed_at": "2026-10-31T09:03:00Z",
+      "session_timestamp": "2026-10-31T09:03:00Z",
       "passage_id": "4ca3f2d0-7f6c-4caf-a45e-1c23a0e42656",
       "passage_title": "A Day at the River",
+      "passage_grade": 4,
       "language_code": "en",
       "wpm": 85.5,
       "word_recognition_pct": 92.3,
       "reading_level": "Instructional",
+      "comprehension_level": 2,
+      "miscue_details": {
+        "substitution": [
+          {
+            "said": "stream",
+            "expected": "river",
+            "sentence": "Maya walked beside the river."
+          }
+        ]
+      },
       "correct": 42,
       "mispronunciation": 1,
       "substitution": 2,
@@ -77,11 +89,16 @@ learner ID from the browser.
 ```
 
 Each `sessions` item is flat and includes passage details, reading scores,
-miscue counts, and behavioral flags. The list includes all sessions, ordered
-oldest first by `assigned_at`. Scores are `null` when unavailable; miscue
-counts are `null` until a selected analysis is completed or partial, and
-behavior flags are `null` when unavailable or not assessable. Average scores
-include completed selected analyses only. The first valid Bearer request
+comprehension level, miscue counts and details, and behavioral flags. The list
+contains sessions with a selected analysis in `completed` or `partial` status,
+ordered oldest first by `assigned_at`. `session_timestamp` is `completed_at`,
+or `assigned_at` when there is no completion timestamp. `passage_grade` is the
+passage's `difficulty_grade_id`. `miscue_details` uses the same shape as the
+session result route; each item includes `said`, `expected`, and the matching
+passage `sentence`. `comprehension_level` is `null` until a comprehension
+attempt is submitted. Scores and behavior flags are `null` when unavailable
+or not assessable. Average scores include completed selected analyses only.
+The first valid Bearer request
 creates a missing learner row from `grade_level` and `display_name` in Supabase
 user metadata. Errors: `401` for a missing/invalid token, `422` when
 new-account metadata has no configured grade, and `503` when Supabase is
@@ -158,14 +175,17 @@ uses frontend names: `session_id`, then `passage.id`, `passage.title`,
 `content_type`, including codec parameters, and returns `storage_key`, an S3
 presigned POST (`upload.url` and `upload.fields`), and `expires_at`. The signed
 policy allows 1 byte through 150 MiB by default. Upload the `file` field last;
-do not send the Bearer token to S3.
+do not send the Bearer token to S3. The storage bucket is in Singapore
+(`ap-southeast-1`); configure `MEDIA_BUCKET_REGION` to that bucket's Region.
 
 `POST /v1/me/sessions/{session_id}/recording` accepts `storage_key`,
 `content_type`, `size_bytes`, and whole `duration_seconds`. The backend checks
-that the object exists and its metadata matches, moves the session to
-`processing`, backdates `session_timestamp` by the reading duration, and sends
-the analysis request with a one-hour presigned GET URL. It returns `202` and
-does not create recording or analysis rows itself.
+that the object exists and its metadata matches. It creates the video recording
+and reading-analysis rows, moves the session to `processing`, and sends MAI the
+passage and a one-hour presigned GET URL through `MAI_BASE_URL/analyses`. It
+waits for MAI, stores the job and result in Supabase, and returns `202`; the
+client polls the session status route for the completed analysis. There is no
+separate `AI_ANALYSIS_URL` service.
 
 ### Poll and read results
 
@@ -183,7 +203,11 @@ Each `miscue_details` item's `said` value is nullable when no heard text is
 stored. The current MAI contract requires `spoken_phrase` to be a string, so
 valid MAI responses may use an empty string for an omission but cannot send
 `null`; other stored events can still have `said: null`. Clients should use a
-fallback for both `null` and blank strings.
+fallback for both `null` and blank strings. `null` means there is no stored
+heard-text value; only an omission event with blank or null `said` should be
+shown as “skipped.” `sentence` contains the passage sentence associated with
+the expected phrase when it can be matched to passage text; otherwise it is
+`null`.
 
 ### Comprehension
 

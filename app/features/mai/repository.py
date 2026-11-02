@@ -61,7 +61,9 @@ class MaiRepository:
             .maybe_single()
             .execute()
         )
-        return response.data if isinstance(response.data, dict) else None
+        if response is None or not isinstance(response.data, dict):
+            return None
+        return response.data
 
     def complete_analysis(
         self, request_id: str, attempt_number: int, response_body: dict[str, Any]

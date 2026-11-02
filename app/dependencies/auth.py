@@ -123,10 +123,13 @@ def _create_learner_from_metadata(
     if not isinstance(display_name, str):
         display_name = None
 
+    age = _metadata_age(user_metadata.get("age"))
+
     learner = {
         "user_id": user_id,
         "current_grade_id": grade_id,
         "display_name": display_name,
+        "age": age,
     }
     try:
         created = client.table("learners").insert(learner).execute()
@@ -156,4 +159,10 @@ def _metadata_grade_id(value: Any) -> int | None:
         match = re.search(r"\d+", value)
         if match is not None:
             return int(match.group())
+    return None
+
+
+def _metadata_age(value: Any) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and 5 <= value <= 18:
+        return value
     return None

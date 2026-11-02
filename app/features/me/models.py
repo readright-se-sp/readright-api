@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
+from app.features.shared.models import MiscueDetail
+
 
 class StartSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -100,12 +102,6 @@ class ComprehensionSubmissionResponse(BaseModel):
 class ResultPassage(BaseModel):
     id: UUID
     title: str
-
-
-class MiscueDetail(BaseModel):
-    said: str | None
-    expected: str
-    sentence: str | None = None
 
 
 class SessionResultResponse(BaseModel):
