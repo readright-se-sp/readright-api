@@ -6010,40 +6010,46 @@
         ],
         "title": "DashboardLearner"
       },
-      "DashboardPassage": {
+      "DashboardSession": {
         "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "assigned_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Assigned At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
           "passage_id": {
             "type": "string",
             "format": "uuid",
             "title": "Passage Id"
           },
-          "title": {
+          "passage_title": {
             "type": "string",
-            "title": "Title"
+            "title": "Passage Title"
           },
           "language_code": {
             "type": "string",
             "title": "Language Code"
-          }
-        },
-        "type": "object",
-        "required": [
-          "passage_id",
-          "title",
-          "language_code"
-        ],
-        "title": "DashboardPassage"
-      },
-      "DashboardReading": {
-        "properties": {
-          "analysis_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Analysis Id"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
           },
           "wpm": {
             "anyOf": [
@@ -6077,58 +6083,138 @@
               }
             ],
             "title": "Reading Level"
-          }
-        },
-        "type": "object",
-        "required": [
-          "analysis_id",
-          "status",
-          "wpm",
-          "word_recognition_pct",
-          "reading_level"
-        ],
-        "title": "DashboardReading"
-      },
-      "DashboardSession": {
-        "properties": {
-          "session_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Session Id"
           },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "assigned_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Assigned At"
-          },
-          "completed_at": {
+          "correct": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date-time"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Completed At"
+            "title": "Correct"
           },
-          "passage": {
-            "$ref": "#/components/schemas/DashboardPassage"
-          },
-          "reading": {
+          "mispronunciation": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DashboardReading"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Mispronunciation"
+          },
+          "substitution": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Substitution"
+          },
+          "omission": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Omission"
+          },
+          "insertion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insertion"
+          },
+          "repetition": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repetition"
+          },
+          "refusal_to_pronounce": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal To Pronounce"
+          },
+          "finger_pointing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finger Pointing"
+          },
+          "loss_of_place": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Of Place"
+          },
+          "monotone_reading": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monotone Reading"
+          },
+          "word_by_word_reading": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Word By Word Reading"
+          },
+          "inaudible_reading": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inaudible Reading"
           }
         },
         "type": "object",
@@ -6137,8 +6223,24 @@
           "status",
           "assigned_at",
           "completed_at",
-          "passage",
-          "reading"
+          "passage_id",
+          "passage_title",
+          "language_code",
+          "wpm",
+          "word_recognition_pct",
+          "reading_level",
+          "correct",
+          "mispronunciation",
+          "substitution",
+          "omission",
+          "insertion",
+          "repetition",
+          "refusal_to_pronounce",
+          "finger_pointing",
+          "loss_of_place",
+          "monotone_reading",
+          "word_by_word_reading",
+          "inaudible_reading"
         ],
         "title": "DashboardSession"
       },
@@ -6338,19 +6440,19 @@
           "summary": {
             "$ref": "#/components/schemas/DashboardSummary"
           },
-          "recent_sessions": {
+          "sessions": {
             "items": {
               "$ref": "#/components/schemas/DashboardSession"
             },
             "type": "array",
-            "title": "Recent Sessions"
+            "title": "Sessions"
           }
         },
         "type": "object",
         "required": [
           "learner",
           "summary",
-          "recent_sessions"
+          "sessions"
         ],
         "title": "LearnerDashboard"
       },

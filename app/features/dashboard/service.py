@@ -2,8 +2,6 @@ import logging
 
 from app.features.dashboard.models import (
     DashboardLearner,
-    DashboardPassage,
-    DashboardReading,
     DashboardSession,
     DashboardSummary,
     LearnerDashboard,
@@ -11,6 +9,23 @@ from app.features.dashboard.models import (
 from app.features.dashboard.repository import DashboardRepository
 
 logger = logging.getLogger(__name__)
+
+DASHBOARD_MISCUE_TYPES = (
+    "correct",
+    "mispronunciation",
+    "substitution",
+    "omission",
+    "insertion",
+    "repetition",
+    "refusal_to_pronounce",
+)
+DASHBOARD_BEHAVIOR_TYPES = (
+    "finger_pointing",
+    "loss_of_place",
+    "monotone_reading",
+    "word_by_word_reading",
+    "inaudible_reading",
+)
 
 
 class LearnerProfileNotFound(Exception):
@@ -37,37 +52,67 @@ class DashboardService:
         if snapshot is None:
             raise LearnerProfileNotFound
 
-        recent_sessions: list[DashboardSession] = []
+        sessions: list[DashboardSession] = []
         for session in snapshot.sessions:
             passage = snapshot.passages.get(str(session["passage_id"]))
             if passage is None:
                 continue
 
             analysis = snapshot.analyses.get(str(session["session_id"]))
-            reading = (
-                DashboardReading(
-                    analysis_id=analysis["analysis_id"],
-                    status=analysis["status"],
+            scores: dict[str, Any] = {
+                "wpm": None,
+                "word_recognition_pct": None,
+                "reading_level": None,
+            }
+            miscues: dict[str, int | None] = dict.fromkeys(
+                DASHBOARD_MISCUE_TYPES, None
+            )
+            behaviors: dict[str, bool | None] = dict.fromkeys(
+                DASHBOARD_BEHAVIOR_TYPES, None
+            )
+
+            if analysis is not None:
+                scores.update(
                     wpm=analysis["wpm"],
                     word_recognition_pct=analysis["word_recognition_pct"],
                     reading_level=analysis["reading_level"],
                 )
-                if analysis is not None
-                else None
-            )
+                analysis_id = str(analysis["analysis_id"])
+                for observation in snapshot.observations.get(analysis_id, []):
+                    behavior_type = observation.get("type")
+                    if behavior_type not in behaviors:
+                        continue
+                    outcome = observation.get("outcome")
+                    behaviors[behavior_type] = (
+                        True
+                        if outcome == "detected"
+                        else False
+                        if outcome == "not_detected"
+                        else None
+                    )
 
-            recent_sessions.append(
+                if analysis["status"] in {"completed", "partial"}:
+                    counts = dict.fromkeys(DASHBOARD_MISCUE_TYPES, 0)
+                    for event in snapshot.events.get(analysis_id, []):
+                        event_type = event.get("reviewed_type") or event.get(
+                            "detected_type"
+                        )
+                        if event_type in counts:
+                            counts[event_type] += 1
+                    miscues = counts
+
+            sessions.append(
                 DashboardSession(
                     session_id=session["session_id"],
                     status=session["status"],
                     assigned_at=session["assigned_at"],
                     completed_at=session["completed_at"],
-                    passage=DashboardPassage(
-                        passage_id=passage["passage_id"],
-                        title=passage["title"],
-                        language_code=passage["language_code"],
-                    ),
-                    reading=reading,
+                    passage_id=passage["passage_id"],
+                    passage_title=passage["title"],
+                    language_code=passage["language_code"],
+                    **scores,
+                    **miscues,
+                    **behaviors,
                 )
             )
 
@@ -88,5 +133,5 @@ class DashboardService:
                     "average_word_recognition_pct"
                 ],
             ),
-            recent_sessions=recent_sessions,
+            sessions=sessions,
         )

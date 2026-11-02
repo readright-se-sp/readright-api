@@ -1,25 +1,18 @@
-# Host-agnostic deployment for the ReadRight API.
+# Docker Compose deployment for the ReadRight API.
+# The API listens on API_PORT (default 8000). Put a managed HTTPS proxy in front
+# of it before exposing this port publicly.
 #
-# Works on any always-on Docker host (Hetzner, Oracle Cloud, a plain VPS, etc.).
-# Caddy terminates TLS (auto Let's Encrypt for $API_DOMAIN) and reverse-proxies
-# to the API on the private compose network — the API itself is never exposed to
-# the internet directly.
-#
-# Setup on the host:
-#   1. cp .env.example .env   &&   fill in SUPABASE_*, API_DOMAIN, ACME_EMAIL
-#   2. point $API_DOMAIN's DNS A record at this box
-#   3. docker compose pull && docker compose up -d
-#
-# On a PaaS that already gives you HTTPS (Fly.io / Render / Cloud Run) you don't
-# need the caddy service — run the API image directly.
+# Setup:
+#   1. cp .env.example .env and fill in the required backend settings.
+#   2. docker compose pull && docker compose up -d
 
 services:
   api:
     image: ${IMAGE:-ghcr.io/christiannemeno/readright-api:latest}
     restart: unless-stopped
     env_file: .env
-    expose:
-      - "8000"          # private to the compose network only — not published to the host
+    ports:
+      - "${API_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -27,22 +20,3 @@ services:
       start_period: 10s
       retries: 3
 
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    depends_on:
-      - api
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      API_DOMAIN: ${API_DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data     # persists issued certs across restarts
-      - caddy_config:/config
-
-volumes:
-  caddy_data:
-  caddy_config:
