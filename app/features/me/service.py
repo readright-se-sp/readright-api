@@ -262,7 +262,10 @@ class MeService:
                     self._repository.update_session(
                         learner_id,
                         session_id,
-                        {"status": "completed", "completed_at": datetime.now(UTC)},
+                        {
+                            "status": "completed",
+                            "completed_at": datetime.now(UTC).isoformat(),
+                        },
                     )
                     session["status"] = "completed"
             elif session["status"] != "comprehension":
@@ -348,7 +351,7 @@ class MeService:
             self._repository.update_session(
                 learner_id,
                 session_id,
-                {"status": "completed", "completed_at": datetime.now(UTC)},
+                {"status": "completed", "completed_at": datetime.now(UTC).isoformat()},
             )
         else:
             self._repository.update_session(
