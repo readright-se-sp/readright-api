@@ -53,6 +53,13 @@ Run:
 sam deploy --guided
 ```
 
+For a later manual deployment, run `sam build` after changing the template,
+then use `sam deploy --guided` to see the template parameter prompts again.
+Parameters with defaults are shown with the default in brackets; press Enter to
+accept it. A plain `sam deploy` is non-interactive and will not show those
+prompts. If you chose not to save settings to `samconfig.toml`, use
+`--guided` whenever you want to enter deployment values interactively.
+
 Use `readright-api` as the stack name and select `ap-southeast-1` for Singapore.
 The stack creates a new private recording bucket in its own Region; it does not
 reuse the existing empty Sydney bucket. The generated bucket name is included
@@ -69,7 +76,8 @@ parameters when prompted:
   different base URL
 - `MaiApiKey` — obtain this from the MAI service owner; keep it private
 - `AiAnalysisUrl` — base URL for the asynchronous reading analysis service
-- `AllowedOrigin` — the frontend origin, such as `https://app.example.com`
+- `AllowedOrigins` — comma-separated frontend origins, such as
+  `http://localhost:5173,https://readright-dev.reevsan.dev`
 
 Leave the version and size parameters at their documented defaults unless the
 reading pipeline owner sets different values: `PipelineVersion`,

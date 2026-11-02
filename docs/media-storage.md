@@ -8,8 +8,8 @@ CloudFormation generates a unique bucket name, returns it as the
 
 The bucket has all four S3 Block Public Access settings enabled, bucket-owner
 enforced object ownership, and SSE-S3 default encryption. Its CORS rule permits
-the configured frontend origin and `http://localhost:5173` to `POST` uploads.
-Change `AllowedOrigin` before deploying the production frontend.
+the origins in `AllowedOrigins` to `POST` uploads. Set this parameter to the
+comma-separated frontend origins before deploying.
 
 The backend signs browser uploads for up to 150 MiB (configurable with
 `MaxUploadBytes`) and 10 minutes. The policy signs the exact `Content-Type`
