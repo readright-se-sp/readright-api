@@ -4,9 +4,9 @@ The backend exposes health, a learner dashboard, learner-facing reading and
 comprehension routes, and CRUD routes for the application tables. CRUD routes
 use the Supabase service key and are protected by a separate backend key; never
 call them from browser code.
-AI inference remains in external services. ReadRight queues MAI requests and
-polls for results; the worker calls the MAI service synchronously. This flow is
-documented in [`mai-integration.md`](mai-integration.md); the proposed ASR/CV
+AI inference remains in external services. ReadRight calls MAI synchronously
+and records the job and result in Supabase. This flow is documented in
+[`mai-integration.md`](mai-integration.md); the proposed ASR/CV
 boundaries are in [`ai-service-contracts.md`](ai-service-contracts.md).
 
 ## Implemented routes
@@ -89,12 +89,12 @@ unavailable.
 
 ### `POST /v1/mai/analyses`
 
-This trusted-backend route accepts the MAI 1.1.0 `AnalysisRequest`, places it
-on the SQS work queue, and returns `202` with a `status_url`. The worker calls
-MAI synchronously, saves the response and normalized fields, and the caller
-polls `GET /v1/mai/analyses/{request_id}`. It requires `X-Backend-Key`. The
-request ID must identify an existing video-backed reading analysis, and the
-passage must match that analysis's session. See the
+This trusted-backend route accepts the MAI 1.1.0 `AnalysisRequest`, calls MAI,
+saves the response and normalized fields, and returns the completed result.
+If the same request is already running, it returns `202` with a `status_url`;
+the caller can poll `GET /v1/mai/analyses/{request_id}`. It requires
+`X-Backend-Key`. The request ID must identify an existing video-backed reading
+analysis, and the passage must match that analysis's session. See the
 [MAI integration guide](mai-integration.md) for idempotency, field mapping,
 errors, and configuration.
 

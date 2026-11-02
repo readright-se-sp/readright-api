@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     BACKEND_API_KEY: str = ""
     MAI_BASE_URL: str = "https://readright-mai.reevsan.dev/v1"
     MAI_API_KEY: str = ""
+    # Used by the legacy Lambda worker only; the Render API calls MAI directly.
     MAI_QUEUE_URL: str = ""
     MAI_CONNECT_TIMEOUT_SECONDS: float = 5.0
     MAI_READ_TIMEOUT_SECONDS: float = 125.0

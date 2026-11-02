@@ -1,23 +1,23 @@
 # MAI 1.1.0 integration
 
 The trusted ReadRight backend exposes `POST /v1/mai/analyses`. It accepts the
-MAI 1.1.0 request body, records the job, places it on an encrypted SQS queue,
-and returns `202 Accepted` with a status URL. A worker calls
-`MAI_BASE_URL/analyses` with `X-API-Key`, waits for MAI's synchronous response,
-validates it, and stores the result. The caller polls ReadRight for completion.
+MAI 1.1.0 request body, creates or claims its `service_jobs` row, calls
+`MAI_BASE_URL/analyses` with `X-API-Key`, validates the response, and saves the
+result to Supabase before returning it. Processing is synchronous; no queue or
+separate worker is involved.
 
 ## Request preconditions
 
-- Send `X-Backend-Key` to authenticate the caller to ReadRight. The MAI key is
-  separate and is sent only from Lambda to the MAI service.
+- Send `X-Backend-Key` to authenticate the caller to ReadRight. The server-side
+  `MAI_API_KEY` is sent from the Render API service to MAI.
 - `request_id` must be the UUID of an existing `reading_analyses.analysis_id`.
 - That analysis must use a video recording as its source, and its session's
   passage title and content must match the request.
 - Use a fresh, unselected analysis with no pre-existing normalized events or
   separate ASR/vision jobs. MAI is the consolidated pipeline for that analysis.
 - The `video_url` must be an HTTPS presigned S3 GET URL that MAI can use for at
-  least 120 seconds after MAI begins processing. Queue delay comes before that
-  window, so use a longer presign lifetime to allow for queueing and retries.
+  least 120 seconds after the request is submitted. MAI starts directly from
+  the API call, so there is no queue delay.
 - Create a fresh analysis row for each distinct run. Reusing a completed
   `request_id` returns the stored response without calling MAI again.
 
@@ -33,27 +33,17 @@ The submitted body follows the supplied MAI contract:
 }
 ```
 
-Accepted response:
+The normal response is `200` with MAI's validated result. A successful response
+contains `request_id`, `reading_score`, `wpm`, the six behavior flags, and
+`miscues`. If the same request is already running, ReadRight returns `202` with
+a `status_url`; poll that URL for `queued`, `running`, `completed` (with the MAI
+response in `result`), or `failed`. Submitting an already completed request ID returns
+its stored response without calling MAI again.
 
-```json
-{
-  "request_id": "3f6c1c7e-9a0d-4a53-8f55-5d2d4f0c8a11",
-  "status": "accepted",
-  "status_url": "/v1/mai/analyses/3f6c1c7e-9a0d-4a53-8f55-5d2d4f0c8a11"
-}
-```
-
-Poll the returned URL. It reports `queued`, `running`, `completed` (with the
-MAI response in `result`), or `failed` (with an error). If the request was
-already completed, submitting the same request ID returns its stored response
-directly with status 200.
-
-The worker retries transient MAI errors and transport failures up to three
-queue receives. It uses integer `Retry-After` values when available, capped to
-the message's remaining one-hour queue retention. After the retry budget is
-exhausted, poll reports `failed`; submit the same logical request again with
-the same `request_id` and a fresh presigned URL to start a new service-job
-attempt.
+MAI or transport failures are persisted to the job and returned to the caller.
+To retry a failed request, submit it again with the same `request_id` and a
+fresh presigned URL. The existing service-job row advances its
+`attempt_number`; successful results remain idempotently replayable.
 
 ## Persistence mapping
 
@@ -73,38 +63,32 @@ Expected passage token IDs and phoneme alignment rows are not invented because
 the MAI response does not include token IDs or phoneme alignment positions. The
 exact phoneme arrays and complete response remain available for later alignment
 work. Presigned video URLs are excluded from request hashes and are never
-written to database tables or application logs. A URL is present in the SQS
-message body while the job waits or runs; SQS server-side encryption is enabled
-and message retention is one hour. Queue access is limited to the API and worker
-Lambda roles. Use a URL lifetime that covers possible queue delay plus MAI's
-120-second processing window.
+written to database tables or application logs. The URL is sent directly to
+MAI for the active request and is not queued or persisted.
 
 MAI has no response fields for transcript, word-recognition percentage,
 confidence, pipeline version, or scoring-policy version. Those existing
 analysis fields are not fabricated. The MAI score range is also left
 unconstrained until its scale is finalized.
 
-## Background processing and timeouts
+## Request and timeout behavior
 
-The API Gateway request only validates, records, and queues the request, so it
-returns before the API Gateway timeout. The SQS worker has a 150-second Lambda
-timeout and a 125-second MAI read timeout. SQS visibility is 900 seconds, six
-times the worker timeout, and a dead-letter queue captures repeated
-infrastructure or message-processing failures. Worker concurrency is capped at
-five. Queue messages are processed at least once; database claims and MAI
-idempotency prevent duplicate results.
+The API waits for MAI and persists the validated response before returning.
+`MAI_READ_TIMEOUT_SECONDS` defaults to 125 seconds. The database claim prevents
+two simultaneous requests with the same ID from processing the same analysis;
+a duplicate receives `202` and can poll the status URL.
 
-Use the SAM `ApiUrl` for submission and polling. Both routes require
-`X-Backend-Key`.
+Both submission and status routes require `X-Backend-Key`.
 
 ## Configuration
 
-Set these Lambda values through the SAM deployment parameters:
+Configure these values on the Render API service:
 
-- `MaiBaseUrl`: defaults to `https://readright-mai.reevsan.dev/v1`.
-- `MaiApiKey`: the MAI service's `X-API-Key` credential. The SAM parameter is
-  marked `NoEcho`; do not place the value in chat, source control, or a saved
-  `samconfig.toml`. It is configured only on the worker Lambda.
+- `MAI_BASE_URL`: defaults to `https://readright-mai.reevsan.dev/v1`.
+- `MAI_API_KEY`: the MAI service's `X-API-Key` credential. Keep it private and
+  store it as a Render secret.
+- `MAI_CONNECT_TIMEOUT_SECONDS`: defaults to `5`.
+- `MAI_READ_TIMEOUT_SECONDS`: defaults to `125`.
 
 The database migration must be applied to the intended Supabase project before
 this route is used. Review `database-proposal.md` for the migration workflow.

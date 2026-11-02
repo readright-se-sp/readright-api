@@ -1,7 +1,7 @@
 # AI service contracts
 
-The consolidated MAI 1.1.0 integration is implemented with queued ReadRight
-requests and a synchronous MAI worker call; see
+The consolidated MAI 1.1.0 integration is implemented as a synchronous ReadRight
+request that calls MAI directly; see
 [`mai-integration.md`](mai-integration.md). The ASR and MediaPipe CV sections
 below remain proposals for separate private services. See
 [architecture](../ARCHITECTURE.md).

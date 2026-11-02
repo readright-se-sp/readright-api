@@ -1,5 +1,8 @@
 # Deploying to AWS Lambda with SAM
 
+> Archived deployment guide. The current Render API calls MAI synchronously and
+> does not use this Lambda and SQS deployment path.
+
 This repository uses AWS SAM to deploy the FastAPI API Lambda and an SQS worker
 Lambda, both as Python 3.12 ZIP packages. API Gateway accepts analysis requests
 quickly; SQS invokes the worker for the longer MAI call. SAM builds the package,

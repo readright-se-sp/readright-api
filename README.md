@@ -1,9 +1,9 @@
 # ReadRight backend
 
 FastAPI backend for ReadRight. AI inference runs in external services. The
-backend queues MAI 1.1.0 analyses, exposes a status route, and persists each
-result to Supabase after a worker calls MAI. It also provides health, learner
-dashboard, and trusted-backend CRUD routes.
+backend calls MAI 1.1.0 directly, tracks each analysis in `service_jobs`, and
+persists its result to Supabase. It also provides health, learner dashboard,
+and trusted-backend CRUD routes.
 
 ## Docs
 
@@ -11,14 +11,14 @@ dashboard, and trusted-backend CRUD routes.
 - [Models](docs/models.md)
 - [Database design and migrations](docs/database-proposal.md)
 - [AI service payloads](docs/ai-service-contracts.md)
-- [MAI queued integration](docs/mai-integration.md)
+- [MAI integration](docs/mai-integration.md)
 - [Learner recording storage](docs/media-storage.md)
-- [AWS Lambda deployment with SAM](docs/lambda-deployment.md)
+- [Render deployment](docs/render-deployment.md)
 
 ## Run locally
 
 Requires Python 3.12. Configure Supabase and `BACKEND_API_KEY` for CRUD routes.
-Set `MAI_BASE_URL`, `MAI_API_KEY`, and `MAI_QUEUE_URL` to enable MAI background
+Set `MAI_API_KEY` (and optionally `MAI_BASE_URL`) to enable direct MAI
 processing. Never expose service keys or backend keys to browser code.
 
 ```bash
