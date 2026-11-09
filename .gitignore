@@ -4,16 +4,14 @@ __pycache__/
 
 # Virtual environment
 .venv/
+.aws-sam/
+samconfig.toml
 
 # Environment variables
 .env
 
 # Test artifacts
-test_rr021.py
 .mcp.json
-
-# MediaPipe model bundles (downloaded on first run)
-app/services/go3/models/
 
 # Test fixture videos (large binaries, provided locally)
 tests/fixtures/

@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Reads app config from .env — API key, WhisperX, Supabase, CORS origins."""
+    """Reads backend configuration from .env."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -12,20 +12,24 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    API_KEY: str
-    WHISPERX_MODEL: str = "base.en"
-    WHISPERX_DEVICE: str = "cpu"
-    WHISPERX_COMPUTE_TYPE: str = "int8"  # lightest CPU footprint; use float16 on cuda
-
-    MAX_CONCURRENCY: int = 1
-    # Frontend caps a recording at 5 min with no explicit MediaRecorder bitrate, so
-    # the browser default (~2.5-3Mbps combined) can produce a ~95-115MB file at the
-    # cap. 150 covers that with margin — too low here rejects legitimate long reads
-    # from exactly the slow/struggling readers this assessment is meant to catch.
-    MAX_UPLOAD_MB: int = 150
-
     SUPABASE_URL: str = ""
     SUPABASE_SERVICE_KEY: str = ""
+    BACKEND_API_KEY: str = ""
+    MAI_BASE_URL: str = "https://readright-mai.reevsan.dev/v1"
+    MAI_API_KEY: str = ""
+    # Used by the legacy Lambda worker only; the Render API calls MAI directly.
+    MAI_QUEUE_URL: str = ""
+    MAI_CONNECT_TIMEOUT_SECONDS: float = 5.0
+    MAI_READ_TIMEOUT_SECONDS: float = 125.0
+    MAI_SERVICE_NAME: str = "readright-mai"
+
+    MEDIA_BUCKET_NAME: str = ""
+    MEDIA_BUCKET_REGION: str = "ap-southeast-1"
+    PIPELINE_VERSION: str = "readright-v1"
+    SCORING_POLICY_VERSION: str = "phil-iri-v1"
+    ASSIGNMENT_POLICY_VERSION: str = "passage-assignment-v1"
+    PROCESSING_TIMEOUT_MINUTES: int = 10
+    MAX_UPLOAD_BYTES: int = 157286400
 
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]
 

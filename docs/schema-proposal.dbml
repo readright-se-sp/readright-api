@@ -1,0 +1,391 @@
+Project readright_backend_services {
+  database_type: 'PostgreSQL'
+  Note: 'The initial schema is in supabase/migrations. Supabase auth.users is managed by Supabase.'
+}
+
+Enum passage_status {
+  draft
+  published
+  retired
+}
+Enum session_status {
+  assigned
+  reading
+  processing
+  comprehension
+  completed
+  failed
+}
+Enum media_kind {
+  audio
+  video
+}
+Enum analysis_status {
+  pending
+  running
+  partial
+  completed
+  failed
+}
+Enum reading_event_type {
+  correct
+  mispronunciation
+  substitution
+  omission
+  insertion
+  repetition
+  transposition
+  reversal
+  self_correction
+  refusal_to_pronounce
+  unassessable
+}
+Enum behavior_type {
+  finger_pointing
+  loss_of_place
+  monotone_reading
+  word_by_word_reading
+  inaudible_reading
+  disregard_punctuation
+  lack_expression
+}
+Enum behavior_outcome {
+  detected
+  not_detected
+  not_assessable
+}
+Enum attempt_status {
+  in_progress
+  submitted
+  abandoned
+}
+Enum service_kind {
+  asr
+  vision
+  prosody
+  pronunciation
+  mai
+}
+Enum service_job_status {
+  pending
+  dispatching
+  running
+  succeeded
+  failed
+  timed_out
+  cancelled
+}
+Enum phoneme_outcome {
+  correct
+  substitution
+  omission
+  insertion
+  unassessable
+}
+
+Table auth.users {
+  id uuid [pk]
+  Note: 'Existing Supabase Auth table; not created by this migration.'
+}
+
+Table grade_levels {
+  grade_id smallint [pk]
+  label text [not null, unique]
+  sequence smallint [not null, unique]
+}
+
+Table learners {
+  user_id uuid [pk, ref: - auth.users.id]
+  current_grade_id smallint [not null, ref: > grade_levels.grade_id]
+  display_name text
+  age integer [note: 'Nullable; if set, between 5 and 18.']
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table passages {
+  passage_id uuid [pk, default: `gen_random_uuid()`]
+  title text [not null]
+  difficulty_grade_id smallint [not null, ref: > grade_levels.grade_id]
+  language_code text [not null]
+  content text [not null]
+  status passage_status [not null, default: 'draft']
+  created_at timestamptz [not null, default: `now()`]
+  published_at timestamptz
+
+  indexes {
+    (difficulty_grade_id, status)
+  }
+
+  Note: 'Publish only after tokens, questions, and choices exist. Published content is immutable; retirement preserves history.'
+}
+
+Table passage_tokens {
+  token_id uuid [pk, default: `gen_random_uuid()`]
+  passage_id uuid [not null, ref: > passages.passage_id]
+  position integer [not null]
+  token_text text [not null]
+  is_proper_noun boolean [not null, default: false]
+
+  indexes {
+    (passage_id, position) [unique]
+  }
+}
+
+Table sessions {
+  session_id uuid [pk, default: `gen_random_uuid()`]
+  learner_id uuid [not null, ref: > learners.user_id]
+  grade_at_assessment_id smallint [not null, ref: > grade_levels.grade_id]
+  passage_id uuid [not null, ref: > passages.passage_id]
+  assignment_policy_version text [not null]
+  status session_status [not null, default: 'assigned']
+  assigned_at timestamptz [not null, default: `now()`]
+  session_timestamp timestamptz
+  completed_at timestamptz
+
+  indexes {
+    (learner_id, assigned_at)
+    passage_id
+  }
+
+  Note: 'Grade and assignment policy are snapshots. assigned_at is distinct from the optional reading start time.'
+}
+
+Table recordings {
+  recording_id uuid [pk, default: `gen_random_uuid()`]
+  session_id uuid [not null, ref: > sessions.session_id]
+  kind media_kind [not null]
+  derived_from_recording_id uuid
+  storage_bucket text [not null]
+  storage_path text [not null]
+  content_type text [not null]
+  size_bytes bigint
+  sha256 text
+  duration_seconds numeric
+  created_at timestamptz [not null, default: `now()`]
+
+  indexes {
+    session_id
+    (storage_bucket, storage_path) [unique]
+  }
+
+  Note: 'Stores private object coordinates and metadata, never bytes or signed URLs. A derived audio recording points back to its source video.'
+}
+
+Table reading_analyses {
+  analysis_id uuid [pk, default: `gen_random_uuid()`]
+  session_id uuid [not null, ref: > sessions.session_id]
+  source_recording_id uuid [not null, ref: > recordings.recording_id]
+  run_number integer [not null]
+  status analysis_status [not null, default: 'pending']
+  is_selected boolean [not null, default: false]
+  pipeline_version text [not null]
+  scoring_policy_version text [not null]
+  transcript text
+  reading_duration_seconds numeric
+  wpm numeric
+  reading_score numeric
+  word_recognition_pct numeric
+  reading_level text
+  failure_code text
+  created_at timestamptz [not null, default: `now()`]
+  finished_at timestamptz
+
+  indexes {
+    (session_id, run_number) [unique]
+    source_recording_id
+  }
+
+  Note: 'reading_score is the MAI overall score, separate from word_recognition_pct. SQL has a partial unique index: at most one selected partial or completed run per session.'
+}
+
+Table service_jobs {
+  service_job_id uuid [pk, default: `gen_random_uuid()`]
+  session_id uuid [not null]
+  analysis_id uuid [not null, ref: > reading_analyses.analysis_id]
+  input_recording_id uuid [not null, ref: > recordings.recording_id]
+  kind service_kind [not null]
+  service_name text [not null]
+  attempt_number integer [not null]
+  is_current boolean [not null, default: true]
+  required_for_completion boolean [not null]
+  status service_job_status [not null, default: 'pending']
+  idempotency_key uuid [not null, unique, default: `gen_random_uuid()`]
+  external_job_id text
+  request_schema_version text [not null]
+  result_schema_version text
+  model_version text
+  request_sha256 text [not null]
+  response_payload jsonb
+  failure_code text
+  failure_message text
+  created_at timestamptz [not null, default: `now()`]
+  started_at timestamptz
+  deadline_at timestamptz
+  lease_expires_at timestamptz
+  finished_at timestamptz
+
+  indexes {
+    (analysis_id, kind, attempt_number) [unique]
+    (service_name, external_job_id) [unique]
+    (status, lease_expires_at)
+    input_recording_id
+  }
+
+  Note: 'Tracks ASR, vision, prosody, pronunciation, or consolidated MAI attempts. SQL has a partial unique index: one current attempt per analysis and kind. MAI response JSON supports idempotent replay; normalized rows are reporting data. Never persist credentials or expiring URLs.'
+}
+
+Table reading_events {
+  event_id uuid [pk, default: `gen_random_uuid()`]
+  analysis_id uuid [not null, ref: > reading_analyses.analysis_id]
+  source_service_job_id uuid [ref: > service_jobs.service_job_id]
+  event_order integer [not null]
+  detected_type reading_event_type [not null]
+  expected_start_token_id uuid [ref: > passage_tokens.token_id]
+  expected_end_token_id uuid [ref: > passage_tokens.token_id]
+  heard_text text
+  actual_phrase text
+  spoken_phrase text
+  actual_phonemes text[]
+  spoken_phonemes text[]
+  read_start_ms integer
+  read_end_ms integer
+  audio_object_key text
+  audio_start_seconds numeric
+  audio_end_seconds numeric
+  confidence numeric
+  reviewed_type reading_event_type
+  reviewer_id uuid [ref: > auth.users.id]
+  reviewed_at timestamptz
+  review_note text
+
+  indexes {
+    (analysis_id, event_order) [unique]
+    expected_start_token_id
+    expected_end_token_id
+    reviewer_id
+    source_service_job_id
+  }
+
+  Note: 'MAI fields are retained with original phoneme arrays and millisecond offsets; normalized event times remain in seconds. Review is an overlay: null means unreviewed; equal to detected_type means confirmed; different means corrected.'
+}
+
+Table behavior_observations {
+  observation_id uuid [pk, default: `gen_random_uuid()`]
+  analysis_id uuid [not null, ref: > reading_analyses.analysis_id]
+  source_service_job_id uuid [not null, ref: > service_jobs.service_job_id]
+  type behavior_type [not null]
+  outcome behavior_outcome [not null]
+  confidence numeric
+  evidence_note text
+
+  indexes {
+    (analysis_id, type) [unique]
+    source_service_job_id
+  }
+}
+
+Table phoneme_events {
+  phoneme_event_id uuid [pk, default: `gen_random_uuid()`]
+  analysis_id uuid [not null]
+  reading_event_id uuid [not null, ref: > reading_events.event_id]
+  source_service_job_id uuid [not null, ref: > service_jobs.service_job_id]
+  alignment_position integer [not null]
+  expected_phoneme text
+  actual_phoneme text
+  notation text [not null]
+  outcome phoneme_outcome [not null]
+  audio_start_seconds numeric
+  audio_end_seconds numeric
+  confidence numeric
+
+  indexes {
+    (reading_event_id, alignment_position) [unique]
+    source_service_job_id
+  }
+
+  Note: 'Actual phonemes require acoustic evidence. Null actual_phoneme is unavailable evidence, never a guessed symbol.'
+}
+
+Table comprehension_questions {
+  question_id uuid [pk, default: `gen_random_uuid()`]
+  passage_id uuid [not null, ref: > passages.passage_id]
+  question_order integer [not null]
+  prompt text [not null]
+  points_possible numeric [not null, default: 1]
+
+  indexes {
+    (passage_id, question_order) [unique]
+  }
+}
+
+Table question_choices {
+  choice_id uuid [pk, default: `gen_random_uuid()`]
+  question_id uuid [not null, ref: > comprehension_questions.question_id]
+  choice_order integer [not null]
+  choice_text text [not null]
+  is_correct boolean [not null, default: false]
+
+  indexes {
+    (question_id, choice_order) [unique]
+  }
+
+  Note: 'Learner payloads must omit is_correct.'
+}
+
+Table comprehension_attempts {
+  attempt_id uuid [pk, default: `gen_random_uuid()`]
+  session_id uuid [not null, ref: > sessions.session_id]
+  attempt_number integer [not null]
+  status attempt_status [not null, default: 'in_progress']
+  started_at timestamptz [not null, default: `now()`]
+  submitted_at timestamptz
+  score_earned numeric
+  score_possible numeric
+
+  indexes {
+    (session_id, attempt_number) [unique]
+  }
+}
+
+Table comprehension_answers {
+  answer_id uuid [pk, default: `gen_random_uuid()`]
+  attempt_id uuid [not null, ref: > comprehension_attempts.attempt_id]
+  question_id uuid [not null, ref: > comprehension_questions.question_id]
+  selected_choice_id uuid [ref: > question_choices.choice_id]
+  answered_at timestamptz
+
+  indexes {
+    (attempt_id, question_id) [unique]
+    question_id
+    selected_choice_id
+  }
+
+  Note: 'Create one row per question at attempt start. SQL requires the selected choice to belong to that question and freezes submitted answers.'
+}
+
+TableGroup identity_and_content {
+  grade_levels
+  learners
+  passages
+  passage_tokens
+}
+
+TableGroup assessment {
+  sessions
+  recordings
+  reading_analyses
+  reading_events
+  phoneme_events
+  behavior_observations
+}
+
+TableGroup service_integrations {
+  service_jobs
+}
+
+TableGroup comprehension {
+  comprehension_questions
+  question_choices
+  comprehension_attempts
+  comprehension_answers
+}
