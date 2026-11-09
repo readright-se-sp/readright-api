@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.features.shared.models import MiscueDetail
 
@@ -10,6 +10,7 @@ from app.features.shared.models import MiscueDetail
 class DashboardLearner(BaseModel):
     user_id: UUID
     display_name: str | None
+    age: Annotated[int | None, Field(ge=5, le=18)]
     grade_id: int
     grade_label: str
 

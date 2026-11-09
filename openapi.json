@@ -5992,6 +5992,19 @@
             ],
             "title": "Display Name"
           },
+          "age": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 18,
+                "minimum": 5
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
           "grade_id": {
             "type": "integer",
             "title": "Grade Id"
@@ -6005,6 +6018,7 @@
         "required": [
           "user_id",
           "display_name",
+          "age",
           "grade_id",
           "grade_label"
         ],
@@ -6465,7 +6479,9 @@
           "age": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 18
               },
               {
                 "type": "null"
@@ -6526,7 +6542,9 @@
           "age": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 18
               },
               {
                 "type": "null"

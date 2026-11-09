@@ -1,7 +1,11 @@
-from typing import Literal
+from typing import Annotated
 from uuid import UUID
 
+from pydantic import Field
+
 from app.features.shared.models import ResourceDefinition
+
+LearnerAge = Annotated[int | None, Field(ge=5, le=18)]
 
 GRADE_LEVELS = ResourceDefinition(
     model_name="GradeLevel",
@@ -23,7 +27,7 @@ LEARNERS = ResourceDefinition(
         "user_id": UUID,
         "current_grade_id": int,
         "display_name": str | None,
-        "age": int | None,
+        "age": LearnerAge,
     },
     create_fields=("user_id", "current_grade_id", "display_name", "age"),
     required_create_fields=("user_id", "current_grade_id"),

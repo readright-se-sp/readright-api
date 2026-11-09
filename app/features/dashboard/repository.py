@@ -37,6 +37,21 @@ class DashboardRepository:
         if summary_response is None or not isinstance(summary_response.data, dict):
             return None
 
+        learner_response = (
+            self._client.table("learners")
+            .select("age")
+            .eq("user_id", learner_id)
+            .maybe_single()
+            .execute()
+        )
+        learner_data = (
+            learner_response.data
+            if learner_response is not None
+            and isinstance(learner_response.data, dict)
+            else {}
+        )
+        summary = {**summary_response.data, "age": learner_data.get("age")}
+
         sessions = _fetch_all(
             lambda: (
                 self._client.table("sessions")
@@ -47,7 +62,7 @@ class DashboardRepository:
             )
         )
         if not sessions:
-            return DashboardSnapshot(summary_response.data, [], {}, {}, {}, {}, {}, {})
+            return DashboardSnapshot(summary, [], {}, {}, {}, {}, {}, {})
 
         session_ids = [str(row["session_id"]) for row in sessions]
         passage_ids = list({str(row["passage_id"]) for row in sessions})
@@ -149,7 +164,7 @@ class DashboardRepository:
                 observations_by_analysis.setdefault(analysis_id, []).extend(rows)
 
         return DashboardSnapshot(
-            summary_response.data,
+            summary,
             sessions,
             passages,
             tokens_by_passage,
