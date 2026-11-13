@@ -37,6 +37,7 @@ learner ID from the browser.
   "learner": {
     "user_id": "4b255bc3-46da-4f8f-9a7d-1ef91cc5532d",
     "display_name": "Maya",
+    "age": 10,
     "grade_id": 4,
     "grade_label": "Grade 4"
   },
@@ -98,11 +99,11 @@ session result route; each item includes `said`, `expected`, and the matching
 passage `sentence`. `comprehension_level` is `null` until a comprehension
 attempt is submitted. Scores and behavior flags are `null` when unavailable
 or not assessable. Average scores include completed selected analyses only.
-The first valid Bearer request
-creates a missing learner row from `grade_level` and `display_name` in Supabase
-user metadata. Errors: `401` for a missing/invalid token, `422` when
-new-account metadata has no configured grade, and `503` when Supabase is
-unavailable.
+The dashboard returns the learner's nullable age. The first valid Bearer
+request creates a missing learner row from `grade_level`, `display_name`, and a
+valid `age` in Supabase user metadata. Errors: `401` for a missing/invalid token,
+`422` when new-account metadata has no configured grade, and `503` when Supabase
+is unavailable.
 
 ### `POST /v1/mai/analyses`
 
@@ -133,7 +134,7 @@ are used for generated IDs and timestamps.
 | Collection | Create fields | Update fields |
 | --- | --- | --- |
 | `/v1/identity/grade-levels` | `grade_id`, `label`, `sequence` (all required) | `label`, `sequence` |
-| `/v1/identity/learners` | `user_id`, `current_grade_id` (required), `display_name` | `current_grade_id`, `display_name` |
+| `/v1/identity/learners` | `user_id`, `current_grade_id` (required), `display_name`, `age` | `current_grade_id`, `display_name`, `age` |
 | `/v1/content/passages` | `title`, `difficulty_grade_id`, `language_code`, `content` (required), `status`, `published_at` | `title`, `difficulty_grade_id`, `language_code`, `content`, `status`, `published_at` |
 | `/v1/content/passage-tokens` | `passage_id`, `position`, `token_text` (required), `is_proper_noun` | `position`, `token_text`, `is_proper_noun` |
 | `/v1/content/comprehension-questions` | `passage_id`, `question_order`, `prompt` (required), `points_possible` | `question_order`, `prompt`, `points_possible` |
@@ -148,9 +149,11 @@ are used for generated IDs and timestamps.
 | `/v1/comprehension/attempts` | `session_id`, `attempt_number` (required); `status`, `submitted_at`, scores | `status`, `submitted_at`, `score_earned`, `score_possible` |
 | `/v1/comprehension/answers` | `attempt_id`, `question_id` (required), `selected_choice_id`, `answered_at` | `selected_choice_id`, `answered_at` |
 
-The database enforces foreign keys, publication immutability, scoring ranges,
-and attempt/answer state rules. These constraints can return `409` for related
-record conflicts or `422` for invalid values; missing rows return `404`.
+Learner `age` is optional and nullable; when provided it must be an integer
+between 5 and 18. The database enforces foreign keys, publication immutability,
+scoring ranges, and attempt/answer state rules. These constraints can return
+`409` for related record conflicts or `422` for invalid values; missing rows
+return `404`.
 `auth.users` is managed through Supabase Auth, not table CRUD. The dashboard
 summary view is read-only and remains available through `GET /v1/dashboard`.
 Recording CRUD manages database metadata only; media bytes must be uploaded or

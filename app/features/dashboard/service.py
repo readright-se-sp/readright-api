@@ -149,6 +149,7 @@ class DashboardService:
             learner=DashboardLearner(
                 user_id=summary["learner_id"],
                 display_name=summary["display_name"],
+                age=summary["age"],
                 grade_id=summary["grade_id"],
                 grade_label=summary["grade_label"],
             ),

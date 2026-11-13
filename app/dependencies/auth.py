@@ -163,6 +163,12 @@ def _metadata_grade_id(value: Any) -> int | None:
 
 
 def _metadata_age(value: Any) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool) and 5 <= value <= 18:
-        return value
-    return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        age = value
+    elif isinstance(value, str) and re.fullmatch(r"(?:[5-9]|1[0-8])", value):
+        age = int(value)
+    else:
+        return None
+    return age if 5 <= age <= 18 else None
